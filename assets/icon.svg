@@ -1,8 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect width="64" height="64" rx="14" fill="#3d90ce"/>
-  <rect x="12" y="12" width="17" height="17" rx="4" fill="#ffffff"/>
-  <rect x="35" y="12" width="17" height="17" rx="4" fill="#ffffff"/>
-  <rect x="12" y="35" width="17" height="17" rx="4" fill="#ffffff"/>
-  <rect x="35" y="35" width="17" height="17" rx="4" fill="#ffffff" opacity="0.45"/>
-  <circle cx="49" cy="49" r="8" fill="#e5484d" stroke="#3d90ce" stroke-width="3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Three clusters together">
+  <title>Fleet of clusters</title>
+  <!--
+    Three cluster wheels overlapping: one cluster in front, two behind it, a fleet. Each has a
+    dark outline, so the group reads on light and dark backgrounds alike, down to 16 pixels.
+  -->
+  <polygon points="14.0,5.0 23.4,9.5 25.7,19.7 19.2,27.8 8.8,27.8 2.3,19.7 4.6,9.5" fill="#c34fb4" stroke="#3a1535" stroke-width="0.8" stroke-linejoin="round"/><g stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" fill="none"><circle cx="14" cy="17" r="6.7"/><line x1="14.0" y1="15.1" x2="14.0" y2="7.6"/><line x1="15.5" y1="15.8" x2="21.3" y2="11.2"/><line x1="15.9" y1="17.4" x2="23.1" y2="19.1"/><line x1="14.8" y1="18.7" x2="18.1" y2="25.4"/><line x1="13.2" y1="18.7" x2="9.9" y2="25.4"/><line x1="12.1" y1="17.4" x2="4.9" y2="19.1"/><line x1="12.5" y1="15.8" x2="6.7" y2="11.2"/></g><circle cx="14" cy="17" r="1.9" fill="#ffffff"/>
+  <polygon points="34.0,5.0 43.4,9.5 45.7,19.7 39.2,27.8 28.8,27.8 22.3,19.7 24.6,9.5" fill="#4caf6a" stroke="#173a22" stroke-width="0.8" stroke-linejoin="round"/><g stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" fill="none"><circle cx="34" cy="17" r="6.7"/><line x1="34.0" y1="15.1" x2="34.0" y2="7.6"/><line x1="35.5" y1="15.8" x2="41.3" y2="11.2"/><line x1="35.9" y1="17.4" x2="43.1" y2="19.1"/><line x1="34.8" y1="18.7" x2="38.1" y2="25.4"/><line x1="33.2" y1="18.7" x2="29.9" y2="25.4"/><line x1="32.1" y1="17.4" x2="24.9" y2="19.1"/><line x1="32.5" y1="15.8" x2="26.7" y2="11.2"/></g><circle cx="34" cy="17" r="1.9" fill="#ffffff"/>
+  <polygon points="24.0,16.0 35.7,21.6 38.6,34.3 30.5,44.5 17.5,44.5 9.4,34.3 12.3,21.6" fill="#3d90ce" stroke="#0f2c44" stroke-width="1.1" stroke-linejoin="round"/><g stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" fill="none"><circle cx="24" cy="31" r="8.4"/><line x1="24.0" y1="28.6" x2="24.0" y2="19.3"/><line x1="25.9" y1="29.5" x2="33.1" y2="23.7"/><line x1="26.3" y1="31.5" x2="35.4" y2="33.6"/><line x1="25.0" y1="33.2" x2="29.1" y2="41.5"/><line x1="23.0" y1="33.2" x2="18.9" y2="41.5"/><line x1="21.7" y1="31.5" x2="12.6" y2="33.6"/><line x1="22.1" y1="29.5" x2="14.9" y2="23.7"/></g><circle cx="24" cy="31" r="2.4" fill="#ffffff"/>
 </svg>
