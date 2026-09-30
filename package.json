@@ -22,8 +22,8 @@
     "CHANGELOG.md"
   ],
   "lensExtension": {
-    "icon": "assets/icon.svg",
-    "banner": "assets/banner.svg"
+    "icon": "assets/fleet-icon.svg",
+    "banner": "assets/fleet-banner.svg"
   },
   "scripts": {
     "build": "lens-types-check && lens-package-build --entry-point ./src/index.ts",
