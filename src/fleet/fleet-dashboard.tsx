@@ -1,6 +1,6 @@
 import { Badge } from "@k8slens/badge";
 import { ClickableDiv, Div, Span } from "@k8slens/element-components";
-import { DashboardIcon, FolderIcon, RefreshIcon } from "@k8slens/icon";
+import { DashboardIcon, FolderIcon, RefreshIcon, SettingsIcon } from "@k8slens/icon";
 import { PlainButton, PrimaryButton, TextInput } from "@k8slens/input-components";
 import { useInject } from "@k8slens/use-inject";
 import { observer } from "mobx-react";
@@ -14,6 +14,7 @@ import { type ClusterView, fleetMonitorInjectable } from "./fleet-monitor.inject
 import { askAiAboutAlertInjectable } from "./ask-ai-about-alert.injectable";
 import { goToAlertInjectable, goToClusterInjectable } from "./go-to-alert.injectable";
 import { notificationSettingsInjectable } from "./notification-settings.injectable";
+import { openSettingsInjectable } from "./open-settings.injectable";
 import { refreshIntervalInjectable } from "./refresh-interval.injectable";
 import { silencedAlertsInjectable } from "./silenced-alerts.injectable";
 import { ResourceRings } from "./resource-rings";
@@ -747,7 +748,7 @@ const describeInterval = (seconds: number) =>
 // How often metrics refresh and clusters that are down are tried again: the choice in effect, with an arrow on
 // either side when there is a shorter or a longer one. An interval saved earlier that is not among the choices
 // shows as one of its own.
-const RefreshIntervalField = observer(() => {
+export const RefreshIntervalField = observer(() => {
   const refreshInterval = useInject(refreshIntervalInjectable)();
   const seconds = refreshInterval.seconds.get();
   const choices = refreshChoices.includes(seconds) ? refreshChoices : [...refreshChoices, seconds].sort((a, b) => a - b);
@@ -818,7 +819,7 @@ const RefreshIntervalField = observer(() => {
 
 // Whether critical alerts raise notifications: on, paused for a day, or off. Also the way back after "Mute all
 // 24h" in a notification.
-const NotificationsToggle = observer(() => {
+export const NotificationsToggle = observer(() => {
   const settings = useInject(notificationSettingsInjectable)();
   const state = settings.state.get();
   const choices = [
@@ -861,6 +862,7 @@ const NotificationsToggle = observer(() => {
 export const FleetDashboard = observer(() => {
   const monitor = useInject(fleetMonitorInjectable)();
   const refreshSeconds = useInject(refreshIntervalInjectable)().seconds.get();
+  const openSettings = useInject(openSettingsInjectable)();
   const lastRefresh = monitor.lastRefresh.get();
 
   // Watches and Prometheus polling run only while the dashboard is on screen.
@@ -891,7 +893,17 @@ export const FleetDashboard = observer(() => {
               Refresh
             </PrimaryButton>
           </Div>
-          <NotificationsToggle />
+          <Div $flex={{ gap: "l", verticalAlign: "center" }}>
+            <NotificationsToggle />
+            <PlainButton
+              Icon={SettingsIcon}
+              onClick={() => void openSettings()}
+              $tooltip="All settings of Multi-Cluster View, in Lens Preferences"
+              $padding={{ horizontal: "s", vertical: "xxs" }}
+            >
+              Settings
+            </PlainButton>
+          </Div>
         </Div>
       </Div>
       {monitor.isReady.get() ? (

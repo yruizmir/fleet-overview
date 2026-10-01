@@ -1,7 +1,7 @@
 {
   "name": "@k8slens/multi-cluster-view",
   "version": "0.2.0",
-  "description": "Multi-Cluster View: capacity and alerts of every cluster on one Lens tab.",
+  "description": "Every Lens cluster on one tab: capacity, alerts, notifications you can act on, and Ask AI on any problem.",
   "license": "MIT",
   "author": "Mirantis",
   "repository": {
@@ -50,6 +50,7 @@
     "@k8slens/navigator-contracts": "^2.0.2",
     "@k8slens/notifications-contracts": "^1.0.2",
     "@k8slens/persistable-contracts": "^1.0.2",
+    "@k8slens/preferences-contracts": "^2.0.0",
     "@k8slens/prometheus-contracts": "^1.0.3",
     "@k8slens/status-bar-contracts": "^1.0.2",
     "@k8slens/stylesheet-contracts": "^1.0.0",

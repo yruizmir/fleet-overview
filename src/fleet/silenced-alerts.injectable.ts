@@ -1,6 +1,6 @@
 import { getInjectable2 } from "@k8slens/injectable";
 import { getPersistableSetInjectableBunch } from "@k8slens/persistable-contracts";
-import { action, observable, type ObservableSet, runInAction } from "mobx";
+import { action, computed, observable, type ObservableSet, runInAction } from "mobx";
 
 // Alerts, by key, the user asked never to be notified about again.
 export const silencedAlertsBunch = getPersistableSetInjectableBunch<string>()({
@@ -22,6 +22,8 @@ export const silencedAlertsInjectable = getInjectable2({
       isSilenced: (key: string) => silenced.get()?.has(key) ?? false,
       silence: action((key: string) => silenced.get()?.add(key)),
       unsilence: action((key: string) => silenced.get()?.delete(key)),
+      count: computed(() => silenced.get()?.size ?? 0),
+      notifyAboutAllAgain: action(() => silenced.get()?.clear()),
     });
   },
 });

@@ -4,6 +4,7 @@ What changed in each version of this extension, newest first.
 
 ## 0.2.0
 
+- Settings page in Lens Preferences → Extensions → Multi-Cluster View: Auto-refresh, notifications, unmute all, notify about all again. Settings in the view opens it.
 - Status bar: the critical and warning alerts of your connected clusters, wherever you are in Lens; click it to open the view.
 - Notifications for critical alerts that appear while Lens is open, with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me about this alert (undone with Notify again on its row); Notifications: On · Pause 24h · Off at the top of the view.
 - Mute an alert for 24 hours, and see the muted ones under Muted.

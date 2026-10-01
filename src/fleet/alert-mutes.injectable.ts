@@ -45,6 +45,7 @@ export const alertMutesInjectable = getInjectable2({
       count: computed(() => [...(mutes.get()?.values() ?? [])].filter((until) => until > now.get()).length),
       mute: action((key: string) => mutes.get()?.set(key, Date.now() + muteForMs)),
       unmute: action((key: string) => mutes.get()?.delete(key)),
+      unmuteAll: action(() => mutes.get()?.clear()),
     });
   },
 });
