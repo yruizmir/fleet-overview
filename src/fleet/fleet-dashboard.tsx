@@ -878,7 +878,13 @@ export const FleetDashboard = observer(() => {
             {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : ` Updates live; metrics every ${refreshSeconds}s.`}
           </Span>
         </Div>
-        <Div $flex={{ gap: "l", verticalAlign: "center", wrap: true }}>
+        {/* The view's controls, together in one panel like the rest of the view's. */}
+        <Div
+          $flex={{ gap: "l", verticalAlign: "center", wrap: true }}
+          $padding={{ horizontal: "m", vertical: "s" }}
+          $backgroundColor="backgroundPrimary"
+          $border={{ color: "borderPrimary", width: "xxs", radius: "m" }}
+        >
           <NotificationsToggle />
           <RefreshIntervalField />
           <PrimaryButton Icon={RefreshIcon} onClick={monitor.refresh}>
