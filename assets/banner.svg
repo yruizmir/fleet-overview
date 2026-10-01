@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400" role="img" aria-label="Six clusters side by side, each with its own colour and status">
-  <title>Fleet Overview for Lens</title>
+  <title>Multicluster View for Lens</title>
   <!--
     A fleet: six cluster cards laid out together, each with its cluster wheel, a status dot and
     resource bars, under the extension's name. The banner is cropped to whatever shape it is
@@ -21,7 +21,7 @@
 
   <rect width="800" height="400" fill="url(#ground)"/>
   <ellipse cx="400" cy="230" rx="360" ry="190" fill="url(#glow)"/>
-  <text x="400" y="100" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#ffffff" letter-spacing="-0.5">Fleet Overview</text>
+  <text x="400" y="100" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#ffffff" letter-spacing="-0.5">Multicluster View</text>
 
   <g filter="url(#lift)">
     <g transform="rotate(-4 115.0 245)">

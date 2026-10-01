@@ -1,7 +1,7 @@
 {
-  "name": "@k8slens/fleet-overview",
-  "version": "0.1.0",
-  "description": "Fleet Overview: capacity and alerts of every cluster on one Lens tab.",
+  "name": "@k8slens/multi-cluster-view",
+  "version": "0.2.0",
+  "description": "Multi-Cluster View: capacity and alerts of every cluster on one Lens tab.",
   "license": "MIT",
   "author": "Mirantis",
   "repository": {
@@ -32,6 +32,7 @@
   "dependencies": {
     "@k8slens/ask-ai-contracts": "^1.0.2",
     "@k8slens/badge": "^3.0.0",
+    "@k8slens/cli-contracts": "^1.0.2",
     "@k8slens/cluster-contracts": "^2.2.0",
     "@k8slens/command-palette-contracts": "^1.0.2",
     "@k8slens/details-panel-contracts": "^1.1.0",

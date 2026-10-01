@@ -23,6 +23,7 @@ import {
   summarizeResources,
 } from "./fleet-model";
 import { eventKind } from "./event-kind";
+import { refreshIntervalInjectable } from "./refresh-interval.injectable";
 
 type Loadable<T> =
   | { readonly status: "loading" }
@@ -54,7 +55,6 @@ export interface ClusterView {
   readonly alerts: readonly FleetAlert[];
 }
 
-const pollIntervalMs = 30_000;
 const connectTimeoutMs = 60_000;
 const unavailableRetryMs = 5 * 60_000;
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -88,6 +88,8 @@ export const fleetMonitorInjectable = getInjectable2({
     const connectCluster = di.inject(connectClusterInjectionToken);
     const kubeResources = di.inject(kubeResourcesInjectionToken)();
     const queryPrometheusRange = di.inject(queryPrometheusRangeInjectionToken)();
+    const refreshInterval = di.inject(refreshIntervalInjectable)();
+    const pollIntervalMs = computed(() => refreshInterval.seconds.get() * 1000);
 
     const records = observable.box<IComputedValue<ClusterRecord[]> | undefined>(undefined, { deep: false });
     const tracked = observable.map<string, Tracked>({}, { deep: false });
@@ -217,6 +219,8 @@ export const fleetMonitorInjectable = getInjectable2({
       let stopped = false;
       let stopReaction: (() => void) | undefined;
       let stopAutoConnect: (() => void) | undefined;
+      let retryDisconnected: (() => void) | undefined;
+      const lastAttempt = new Map<string, number>();
 
       void allClusterRecords().then((computedRecords) => {
         if (stopped) {
@@ -225,22 +229,25 @@ export const fleetMonitorInjectable = getInjectable2({
 
         runInAction(() => records.set(computedRecords));
 
-        // Opening the fleet connects every cluster it lists, once per opening; a cluster the user disconnects
-        // afterwards stays disconnected until the fleet is opened again.
-        const attempted = new Set<string>();
+        // While the dashboard is open, every cluster it lists is kept connected: one that appears (clusters
+        // discovered from a cloud account arrive late) is connected at once, and one that is down, failed or
+        // was disconnected is tried again every refresh interval.
+        const disconnectedIds = () =>
+          clusters.get().filter((cluster) => !cluster.connected && !cluster.connecting).map((cluster) => cluster.record.id);
 
-        stopAutoConnect = reaction(
-          () => clusters.get().filter((cluster) => !cluster.connected && !cluster.connecting).map((cluster) => cluster.record.id),
-          (ids) => {
-            for (const id of ids) {
-              if (!attempted.has(id)) {
-                attempted.add(id);
-                void connect(id);
-              }
+        const connectDue = (ids: string[]) => {
+          const now = Date.now();
+
+          for (const id of ids) {
+            if (now - (lastAttempt.get(id) ?? 0) >= pollIntervalMs.get()) {
+              lastAttempt.set(id, now);
+              void connect(id);
             }
-          },
-          { fireImmediately: true },
-        );
+          }
+        };
+
+        stopAutoConnect = reaction(disconnectedIds, connectDue, { fireImmediately: true });
+        retryDisconnected = () => connectDue(disconnectedIds());
 
         stopReaction = reaction(
           () => computedRecords.get().filter((record) => record.isConnected.get()).map((record) => record.id),
@@ -261,16 +268,29 @@ export const fleetMonitorInjectable = getInjectable2({
         );
       });
 
-      const timer = setInterval(() => {
+      const tick = () => {
         runInAction(() => now.set(Date.now()));
+        retryDisconnected?.();
 
         for (const clusterId of tracked.keys()) {
           void pollPrometheus(clusterId, false);
         }
-      }, pollIntervalMs);
+      };
+
+      // The user can change the interval while the dashboard is open; the timer follows it.
+      let timer: ReturnType<typeof setInterval> | undefined;
+      const stopTimer = reaction(
+        () => pollIntervalMs.get(),
+        (intervalMs) => {
+          clearInterval(timer);
+          timer = setInterval(tick, intervalMs);
+        },
+        { fireImmediately: true },
+      );
 
       return () => {
         stopped = true;
+        stopTimer();
         clearInterval(timer);
         stopReaction?.();
         stopAutoConnect?.();

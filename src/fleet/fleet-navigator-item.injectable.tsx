@@ -22,7 +22,7 @@ const FleetNavigatorRow = () => {
       <NavigatorItemIcon>
         <DashboardIcon />
       </NavigatorItemIcon>
-      <NavigatorItemLabel onClick={() => void openFleetOverview()}>Fleet Overview</NavigatorItemLabel>
+      <NavigatorItemLabel onClick={() => void openFleetOverview()}>Multi-Cluster View</NavigatorItemLabel>
     </>
   );
 };
@@ -30,10 +30,10 @@ const FleetNavigatorRow = () => {
 export default getNavigatorItemKindInjectableBunch({
   kind: fleetNavigatorKind,
   parentKind: navigatorRootKind,
-  description: "Opens the fleet overview: physical resources and alerts of every cluster in one tab.",
+  description: "Opens the multi-cluster view: physical resources and alerts of every cluster in one tab.",
 
   items: {
-    instantiate: () => async () => computed(() => [{ id: "fleet-overview", name: "Fleet Overview", orderNumber: 5 }]),
+    instantiate: () => async () => computed(() => [{ id: "fleet-overview", name: "Multi-Cluster View", orderNumber: 5 }]),
   },
 
   Component: FleetNavigatorRow,

@@ -4,7 +4,7 @@ import { DashboardIcon, FolderIcon, RefreshIcon } from "@k8slens/icon";
 import { PlainButton, PrimaryButton, TextInput } from "@k8slens/input-components";
 import { useInject } from "@k8slens/use-inject";
 import { observer } from "mobx-react";
-import { type ReactNode, useEffect } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect } from "react";
 import styles from "./fleet-dashboard.module.scss";
 import { clusterSourcesInjectable } from "./cluster-sources.injectable";
 import { fleetFilterInjectable } from "./fleet-filter.injectable";
@@ -12,6 +12,7 @@ import type { FleetAlert, Resource, Severity } from "./fleet-model";
 import { type ClusterView, fleetMonitorInjectable } from "./fleet-monitor.injectable";
 import { askAiAboutAlertInjectable } from "./ask-ai-about-alert.injectable";
 import { goToAlertInjectable, goToClusterInjectable } from "./go-to-alert.injectable";
+import { refreshIntervalInjectable } from "./refresh-interval.injectable";
 import { ResourceRings } from "./resource-rings";
 import { formatBytes, formatCores, formatCount, percentOf } from "./quantity";
 
@@ -525,7 +526,7 @@ const ClusterColumn = observer(({ cluster }: { cluster: ClusterView }) => {
               $font={{ size: "m", bold: true }}
               $color={{ normal: "textHighlight", hover: "link" }}
               $onClick={() => void goToCluster(cluster.record.id)}
-              $tooltip="Open this cluster"
+              $tooltip="Open this cluster's overview"
             >
               {cluster.record.name.get()}
             </ClickableDiv>
@@ -560,7 +561,9 @@ const ClusterColumn = observer(({ cluster }: { cluster: ClusterView }) => {
             <Span $color="textMuted">Metrics </Span>
             <MetricsStatus cluster={cluster} />
           </Div>
-          <ResourceRings resources={resources} />
+          <ClickableDiv $onClick={() => void goToCluster(cluster.record.id)} $tooltip="Open this cluster's overview">
+            <ResourceRings resources={resources} />
+          </ClickableDiv>
         </>
       )}
 
@@ -601,8 +604,89 @@ const ClusterColumns = observer(() => {
   );
 });
 
+const refreshChoices = [30, 60, 120, 300, 600];
+
+const formatInterval = (seconds: number) =>
+  seconds < 60 ? `${seconds}s` : seconds % 60 === 0 ? `${seconds / 60}m` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+
+const describeInterval = (seconds: number) =>
+  seconds < 60 ? `${seconds} seconds` : seconds === 60 ? "minute" : `${formatInterval(seconds).replace("m", " min")}`;
+
+// How often metrics refresh and clusters that are down are tried again: the choice in effect, with an arrow on
+// either side when there is a shorter or a longer one. An interval saved earlier that is not among the choices
+// shows as one of its own.
+const RefreshIntervalField = observer(() => {
+  const refreshInterval = useInject(refreshIntervalInjectable)();
+  const seconds = refreshInterval.seconds.get();
+  const choices = refreshChoices.includes(seconds) ? refreshChoices : [...refreshChoices, seconds].sort((a, b) => a - b);
+  const index = choices.indexOf(seconds);
+  const shorter = choices[index - 1];
+  const longer = choices[index + 1];
+
+  const step = (choice: number | undefined) => {
+    if (choice !== undefined) {
+      refreshInterval.set(choice);
+    }
+  };
+
+  // The arrow keys step too, while the control has focus.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const byKey: Record<string, number | undefined> = {
+      ArrowLeft: shorter,
+      ArrowDown: shorter,
+      ArrowRight: longer,
+      ArrowUp: longer,
+      Home: choices[0],
+      End: choices[choices.length - 1],
+    };
+
+    if (event.key in byKey) {
+      event.preventDefault();
+      step(byKey[event.key]);
+    }
+  };
+
+  // An arrow with nothing past it keeps its room, so the value does not shift as it reaches either end.
+  const Arrow = ({ to, label, glyph }: { to: number | undefined; label: string; glyph: string }) => (
+    <PlainButton
+      onClick={() => step(to)}
+      tabIndex={-1}
+      aria-hidden={to === undefined}
+      $tooltip={to === undefined ? undefined : `${label}: every ${describeInterval(to)}`}
+      $padding={{ horizontal: "xs", vertical: "xxs" }}
+      $font={{ size: "l", bold: true }}
+      $style={{ visibility: to === undefined ? "hidden" : "visible" }}
+    >
+      {glyph}
+    </PlainButton>
+  );
+
+  return (
+    <Div
+      $flex={{ gap: "xxs", verticalAlign: "center" }}
+      role="spinbutton"
+      aria-label="Auto-refresh"
+      aria-valuenow={seconds}
+      aria-valuetext={`every ${describeInterval(seconds)}`}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      $outline={{ focusVisible: { color: "primary", width: "xxs" } }}
+      $border={{ radius: "m" }}
+      $tooltip={`Metrics refresh, and clusters that are down are reconnected, every ${describeInterval(seconds)}`}
+    >
+      <Span $color="textMuted">Auto-refresh</Span>
+      <Arrow to={shorter} label="Shorter" glyph="‹" />
+      <Span $color="textHighlight" $style={{ minWidth: 48, textAlign: "center" }}>
+        {formatInterval(seconds)}
+      </Span>
+      <Arrow to={longer} label="Longer" glyph="›" />
+    </Div>
+  );
+});
+
 export const FleetDashboard = observer(() => {
   const monitor = useInject(fleetMonitorInjectable)();
+  const refreshSeconds = useInject(refreshIntervalInjectable)().seconds.get();
   const lastRefresh = monitor.lastRefresh.get();
 
   // Watches and Prometheus polling run only while the dashboard is on screen.
@@ -613,14 +697,15 @@ export const FleetDashboard = observer(() => {
       <Div $flex={{ horizontalAlign: "space-between", verticalAlign: "top", gap: "m", wrap: true }}>
         <Div $flex={{ direction: "vertical", gap: "xxs" }}>
           <Span $font={{ size: "xxl", bold: true }} $color="textHighlight">
-            Fleet Overview
+            Multi-Cluster View
           </Span>
           <Span $color="textMuted">
             Physical resources and alerts across all your clusters.
-            {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : " Updates live; metrics every 30s."}
+            {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : ` Updates live; metrics every ${refreshSeconds}s.`}
           </Span>
         </Div>
         <Div $flex={{ gap: "s", verticalAlign: "center" }}>
+          <RefreshIntervalField />
           <PrimaryButton Icon={RefreshIcon} onClick={monitor.refresh}>
             Refresh
           </PrimaryButton>
@@ -645,6 +730,6 @@ export const FleetDashboard = observer(() => {
 export const FleetDashboardTitle = () => (
   <Span $flex={{ gap: "xs", verticalAlign: "center" }}>
     <DashboardIcon $size="s" />
-    Fleet Overview
+    Multi-Cluster View
   </Span>
 );

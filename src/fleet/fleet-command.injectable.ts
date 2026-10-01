@@ -3,7 +3,7 @@ import { openFleetOverviewInjectable } from "./open-fleet-overview.injectable";
 
 export default getCommandInjectableBunch({
   id: "fleet-overview.open",
-  title: "Fleet: Open overview",
+  title: "Multi-Cluster View: Open",
   action: {
     instantiate: (di) => {
       const openFleetOverview = di.inject(openFleetOverviewInjectable)();

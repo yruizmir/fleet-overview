@@ -1,3 +1,5 @@
+import { runCliCommandInjectionToken } from "@k8slens/cli-contracts";
+import { clusterNameInjectionToken } from "@k8slens/cluster-contracts";
 import { navigateToKubeResourceDetailsInjectionToken } from "@k8slens/details-panel-contracts";
 import { getInjectable2 } from "@k8slens/injectable";
 import { coreV1, nodeKind, podKind } from "@k8slens/kubernetes-contracts";
@@ -54,15 +56,43 @@ export const goToAlertInjectable = getInjectable2({
   },
 });
 
+const shellQuote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
+
+// Takes the user to a cluster's overview, the page with its CPU, memory and pods. Lens offers extensions no
+// navigation there, so this asks the Lens CLI (`lens clusters connect <name> --open`), which connects the cluster
+// and opens its overview tab. Without the CLI installed (Preferences > Lens CLI), or when it does not know the
+// name, the cluster's nodes list is the nearest place an extension can reach.
 export const goToClusterInjectable = getInjectable2({
   id: "fleet-overview-go-to-cluster",
-  consumptions: [navigateToNodesInjectionToken, showErrorNotificationInjectionToken],
+  consumptions: [
+    clusterNameInjectionToken,
+    runCliCommandInjectionToken,
+    navigateToNodesInjectionToken,
+    showErrorNotificationInjectionToken,
+  ],
 
   instantiate: (di) => {
+    const clusterName = di.inject(clusterNameInjectionToken);
+    const runCliCommand = di.inject(runCliCommandInjectionToken)();
     const navigateToNodes = di.inject(navigateToNodesInjectionToken)();
     const showErrorNotification = di.inject(showErrorNotificationInjectionToken)();
 
+    const openOverview = async (clusterId: string) => {
+      try {
+        const output = await runCliCommand(`lens clusters connect ${shellQuote(await clusterName(clusterId))} --open`);
+
+        // The CLI says so on its output, and exits fine, when it has no cluster of that name.
+        return !/not found|required/i.test(output);
+      } catch {
+        return false;
+      }
+    };
+
     return () => async (clusterId: string) => {
+      if (await openOverview(clusterId)) {
+        return;
+      }
+
       try {
         await navigateToNodes({ clusterId });
       } catch (error) {

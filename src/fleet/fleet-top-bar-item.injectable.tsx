@@ -11,7 +11,7 @@ const FleetOverviewButton = () => {
       iconName="dashboard"
       size={20}
       $onClick={() => void openFleetOverview()}
-      $tooltip="Fleet Overview: resources and alerts of all clusters"
+      $tooltip="Multi-Cluster View: resources and alerts of all clusters"
     />
   );
 };

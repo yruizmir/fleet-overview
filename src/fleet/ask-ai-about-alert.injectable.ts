@@ -41,7 +41,34 @@ const inspectText = (alert: FleetAlert) => {
   }
 };
 
-// Starts an Ask AI conversation on the alert's cluster, briefed with what the fleet overview saw.
+// The logs the assistant reads before anything else. Extensions cannot read logs themselves, but the assistant
+// runs kubectl against the cluster, so the briefing names the exact commands. `--previous` is the run that crashed:
+// a container in CrashLoopBackOff or OOMKilled has restarted, and its current log says little about why.
+const logsText = (alert: FleetAlert): string[] => {
+  const { target } = alert;
+
+  switch (target.type) {
+    case "pod":
+      return [
+        `kubectl logs ${target.name} -n ${target.namespace} --all-containers --tail=200`,
+        `kubectl logs ${target.name} -n ${target.namespace} --all-containers --previous --tail=200`,
+      ];
+    case "node":
+      return [
+        `kubectl get pods -A --field-selector spec.nodeName=${target.name}`,
+        `kubectl get --raw "/api/v1/nodes/${target.name}/proxy/logs/?query=kubelet&tailLines=200"`,
+      ];
+    case "namespace":
+      return [
+        `kubectl get pods -n ${target.namespace}`,
+        `kubectl logs <failing pod> -n ${target.namespace} --all-containers --previous --tail=200`,
+      ];
+    case "cluster":
+      return ["kubectl get pods -A | grep -vE 'Running|Completed'", "kubectl logs <failing pod> -n <namespace> --all-containers --previous --tail=200"];
+  }
+};
+
+// Starts an Ask AI conversation on the alert's cluster, briefed with what the multi-cluster view saw.
 export const askAiAboutAlertInjectable = getInjectable2({
   id: "fleet-overview-ask-ai-about-alert",
   consumptions: [askAiInjectionToken, showErrorNotificationInjectionToken],
@@ -54,9 +81,9 @@ export const askAiAboutAlertInjectable = getInjectable2({
       try {
         await askAi({
           clusterId: alert.clusterId,
-          prompt: `Troubleshoot "${alert.title}" on ${targetText(alert)}: find the root cause and tell me how to fix it.`,
+          prompt: `Troubleshoot "${alert.title}" on ${targetText(alert)}: read its logs, find the root cause and tell me how to fix it.`,
           context: [
-            `The Fleet Overview extension flagged this ${alert.severity} alert on the cluster "${clusterName}".`,
+            `The Multi-Cluster View extension flagged this ${alert.severity} alert on the cluster "${clusterName}".`,
             `- Alert: ${alert.title}`,
             `- Details: ${alert.detail}`,
             `- Source: ${sourceText[alert.source]}`,
@@ -64,7 +91,10 @@ export const askAiAboutAlertInjectable = getInjectable2({
             `- Start with: \`${inspectText(alert)}\``,
             alert.since ? `- Last seen: ${new Date(alert.since).toISOString()}` : "",
             "",
-            "Inspect the affected resources, their events and logs, explain the likely cause, and give the exact commands or manifest changes that fix it.",
+            "Read the logs first, before guessing at a cause; the root cause is usually in them:",
+            ...logsText(alert).map((command) => `- \`${command}\``),
+            "",
+            "Quote the log lines that show the cause. Then inspect the affected resources and their events, explain the likely cause, and give the exact commands or manifest changes that fix it. If a log command is refused or returns nothing, say so and carry on with the rest.",
           ]
             .filter((line) => line !== "")
             .join("\n"),
