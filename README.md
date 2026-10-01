@@ -10,11 +10,15 @@ While the view is open it keeps every cluster it lists connected: a cluster Lens
 
 ## All clusters
 
+![All clusters: clusters connected, nodes ready, CPU, memory, storage, GPU and pods summed across every cluster, with Auto-refresh and Refresh](assets/screenshots/all-clusters.png)
+
 Clusters connected, nodes ready, and CPU, memory, node storage, GPUs and pod slots summed across all of them, each as used / allocatable with the share requested.
 
 Allocatable and requests come from the nodes and pods of each cluster, watched live. Real CPU, memory and root-filesystem usage come from Prometheus (node-exporter, with cAdvisor as a fallback) at every refresh: every 30 seconds by default, or 1, 2, 5 or 10 minutes, set with the arrows of **Auto-refresh** next to **Refresh**.
 
 ## Alerts
+
+![The alerts panel: severity filters, and two CrashLoopBackOff alerts that say the pod still shows Running, each with Mute 24h and Ask AI](assets/screenshots/alerts.png)
 
 One panel for all connected clusters, most severe first:
 
@@ -31,6 +35,8 @@ Filter by severity (All, Critical, Warning, Info) or by one cluster (click its a
 
 ## Capacity per cluster
 
+![Cluster cards with status, Kubernetes version (the one two minor versions behind in warning colour), CPU, memory and pod rings, and alert counts](assets/screenshots/cluster-cards.png)
+
 One card per cluster: where it comes from (a path you set with **+ Set source path**; Lens does not tell extensions a cluster's kubeconfig or folder), its status, Kubernetes version (in warning colour when it is two minor versions or more behind your newest cluster), nodes, storage, metrics source, CPU / memory / pod rings as in Lens's cluster overview, and its alert count.
 
 **Find a cluster** filters the cards by name; **Sort by Health** puts the clusters with critical alerts first and the disconnected ones last, **Name** sorts them alphabetically.
@@ -39,6 +45,10 @@ Click a cluster's name or its rings to open its Lens overview. This goes through
 
 ## Status bar and notifications
 
+![The status bar: 2 critical, 30 warning](assets/screenshots/status-bar.png)
+
 The status bar shows the critical and warning alerts of your connected clusters, or **All clusters OK**, wherever you are in Lens. It only watches clusters that are already connected: connecting them is the view's to do.
 
-A critical alert that appears while Lens is open raises a notification, a few at most at once. What a cluster already had when it connected, and muted alerts, do not.
+A critical alert that appears while Lens is open raises a notification, a few at most at once, with **Open** to go to what it is about and **Ask AI** to troubleshoot it. What a cluster already had when it connected, and muted alerts, do not.
+
+![A notification for a critical CrashLoopBackOff alert](assets/screenshots/notification.png)

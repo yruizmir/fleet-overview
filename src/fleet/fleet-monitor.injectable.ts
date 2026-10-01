@@ -44,6 +44,7 @@ import {
   workloadAlerts,
 } from "./fleet-model";
 import { alertMutesInjectable } from "./alert-mutes.injectable";
+import { notifyCriticalAlertInjectable } from "./notify-critical-alert.injectable";
 import { eventKind } from "./event-kind";
 import { refreshIntervalInjectable } from "./refresh-interval.injectable";
 
@@ -98,6 +99,8 @@ const maxConnectBackoffMs = 10 * 60_000;
 // A cluster's alerts in its first minute of being watched are what it already had: no notification for those.
 const notifyAfterMs = 60_000;
 const maxNotificationsAtOnce = 3;
+// An alert gone for less than this and back is the same problem: no second notification for it.
+const forgetResolvedAfterMs = 10 * 60_000;
 const mostCommon = (values: readonly (string | undefined)[]) => {
   const counts = new Map<string, number>();
 
@@ -141,6 +144,7 @@ export const fleetMonitorInjectable = getInjectable2({
     const refreshInterval = di.inject(refreshIntervalInjectable)();
     const mutes = di.inject(alertMutesInjectable)();
     const showErrorNotification = di.inject(showErrorNotificationInjectionToken)();
+    const notifyCriticalAlert = di.inject(notifyCriticalAlertInjectable)();
     const pollIntervalMs = computed(() => refreshInterval.seconds.get() * 1000);
 
     const records = observable.box<IComputedValue<ClusterRecord[]> | undefined>(undefined, { deep: false });
@@ -470,42 +474,38 @@ export const fleetMonitorInjectable = getInjectable2({
     // A critical alert that was not there before raises a Lens notification, wherever the user is. Not for what
     // a cluster already had when it started being watched, not for a muted alert, and a few at most at once.
     const notifyNewCriticals = () => {
-      const notified = new Set<string>();
+      // Each critical alert seen, with when it was last seen.
+      const seen = new Map<string, number>();
+      const warmingUp = (alert: FleetAlert) => {
+        const entry = tracked.get(alert.clusterId);
+
+        return entry === undefined || Date.now() - entry.trackedAt <= notifyAfterMs;
+      };
 
       return reaction(
         () => alerts.get().filter((alert) => alert.severity === "critical"),
         (critical) => {
-          const fresh = critical.filter((alert) => {
-            const entry = tracked.get(alert.clusterId);
+          const at = Date.now();
+          const fresh = critical.filter((alert) => !seen.has(alert.key) && !warmingUp(alert));
 
-            return !notified.has(alert.key) && entry !== undefined && Date.now() - entry.trackedAt > notifyAfterMs;
-          });
+          critical.forEach((alert) => seen.set(alert.key, at));
 
-          // Seen ones are remembered even when not notified, and forgotten once resolved so a relapse notifies.
-          critical.filter((alert) => {
-            const entry = tracked.get(alert.clusterId);
-
-            return entry !== undefined && Date.now() - entry.trackedAt <= notifyAfterMs;
-          }).forEach((alert) => notified.add(alert.key));
-
-          for (const key of [...notified]) {
-            if (!critical.some((alert) => alert.key === key)) {
-              notified.delete(key);
+          for (const [key, lastSeen] of [...seen]) {
+            if (at - lastSeen > forgetResolvedAfterMs) {
+              seen.delete(key);
             }
           }
 
           const nameOf = (clusterId: string) =>
             records.get()?.get().find((record) => record.id === clusterId)?.name.get() ?? clusterId;
 
-          fresh.slice(0, maxNotificationsAtOnce).forEach((alert) =>
-            showErrorNotification(`Critical on ${nameOf(alert.clusterId)}: ${alert.title}. ${alert.detail}`),
-          );
+          fresh.slice(0, maxNotificationsAtOnce).forEach((alert) => notifyCriticalAlert(alert, nameOf(alert.clusterId)));
 
           if (fresh.length > maxNotificationsAtOnce) {
-            showErrorNotification(`${fresh.length - maxNotificationsAtOnce} more critical alerts. Open Multi-Cluster View to see them.`);
+            showErrorNotification(
+              `${fresh.length - maxNotificationsAtOnce} more critical alerts. Click the alert count in the status bar to see them all.`,
+            );
           }
-
-          fresh.forEach((alert) => notified.add(alert.key));
         },
       );
     };

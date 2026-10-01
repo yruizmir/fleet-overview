@@ -88,6 +88,34 @@ describe("podAlerts", () => {
     assert.equal(running[0]?.key, waiting[0]?.key);
   });
 
+  test("the moment a looping container has just died is the same alert too", () => {
+    const [alert] = podAlerts(
+      "c1",
+      [pod({ containerStatuses: [container({ terminated: { reason: "Error", exitCode: 255, finishedAt: ago(2_000) } }, {}, 42)] })],
+      now,
+    );
+
+    assert.equal(alert?.key, "c1/pod/monitoring/vm-0/CrashLoopBackOff");
+    assert.match(alert?.detail ?? "", /just exited/);
+  });
+
+  test("an init container that ran to completion is not a crash loop, however many restarts it counts", () => {
+    const alerts = podAlerts(
+      "c1",
+      [
+        pod({
+          initContainerStatuses: [
+            { name: "secret-init", restartCount: 25, state: { terminated: { reason: "Completed", exitCode: 0, finishedAt: ago(minutes(3)) } }, lastState: {} },
+          ],
+          containerStatuses: [container({ running: { startedAt: ago(days(2)) } })],
+        }),
+      ],
+      now,
+    );
+
+    assert.deepEqual(alerts, []);
+  });
+
   test("a clean exit after a crash loop is read as Kubernetes stopping it, often a liveness probe", () => {
     const [alert] = podAlerts(
       "c1",

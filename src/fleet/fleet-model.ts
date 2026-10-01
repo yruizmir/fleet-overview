@@ -255,6 +255,7 @@ export const podAlerts = (clusterId: string, pods: readonly PodV1[], now: number
   pods.flatMap((pod): FleetAlert[] => {
     const { name, namespace } = pod.metadata;
     const target: AlertTarget = { type: "pod", namespace: namespace ?? "default", name };
+    const initNames = new Set((pod.status?.initContainerStatuses ?? []).map((status) => status.name));
     const statuses = [...(pod.status?.initContainerStatuses ?? []), ...(pod.status?.containerStatuses ?? [])];
     const created = pod.metadata.creationTimestamp ? Date.parse(pod.metadata.creationTimestamp) : undefined;
     const age = created ? `, pod started ${formatAge(now - created)} ago` : "";
@@ -276,6 +277,19 @@ export const podAlerts = (clusterId: string, pods: readonly PodV1[], now: number
           badWaitingReasons[reason],
           `${namespace}/${name}: container ${status.name} ${waitingText[reason]} (${restarts}${age}${reason === "CrashLoopBackOff" ? lastExit(status) : ""})${reason === "CrashLoopBackOff" ? phase : ""}`,
           lastCrash ?? created,
+        );
+      }
+
+      // The moment between dying and Kubernetes scheduling the next restart: still the same crash loop. Not for an
+      // init container, whose job is to run to completion and be terminated.
+      const justDied = initNames.has(status.name) ? undefined : status.state?.terminated;
+
+      if (justDied && status.restartCount >= crashLoopRestarts && pod.status?.phase === "Running") {
+        return alert(
+          "CrashLoopBackOff",
+          "critical",
+          `${namespace}/${name}: container ${status.name} keeps crashing; it just exited and will be restarted (${restarts}${age}${lastExit({ ...status, lastState: { terminated: justDied } })})${phase}`,
+          justDied.finishedAt ? Date.parse(justDied.finishedAt) : lastCrash,
         );
       }
 
