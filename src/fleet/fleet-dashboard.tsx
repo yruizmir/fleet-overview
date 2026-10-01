@@ -868,25 +868,22 @@ export const FleetDashboard = observer(() => {
 
   return (
     <Div $flex={{ direction: "vertical", gap: "l" }} $padding="xl" $height="full" $overflow="auto">
-      {/* The name with Refresh on its right; below, what it shows with the notifications control on the right. */}
-      <Div $flex={{ direction: "vertical", gap: "xs" }}>
-        <Div $flex={{ horizontalAlign: "space-between", verticalAlign: "center", gap: "m", wrap: true }}>
+      <Div $flex={{ horizontalAlign: "space-between", verticalAlign: "top", gap: "m", wrap: true }}>
+        <Div $flex={{ direction: "vertical", gap: "xxs" }}>
           <Span $font={{ size: "xxl", bold: true }} $color="textHighlight">
             Multi-Cluster View
           </Span>
-          <Div $flex={{ gap: "l", verticalAlign: "center" }}>
-            <RefreshIntervalField />
-            <PrimaryButton Icon={RefreshIcon} onClick={monitor.refresh}>
-              Refresh
-            </PrimaryButton>
-          </Div>
-        </Div>
-        <Div $flex={{ horizontalAlign: "space-between", verticalAlign: "center", gap: "m", wrap: true }}>
           <Span $color="textMuted">
             Physical resources and alerts across all your clusters.
             {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : ` Updates live; metrics every ${refreshSeconds}s.`}
           </Span>
+        </Div>
+        <Div $flex={{ gap: "l", verticalAlign: "center", wrap: true }}>
           <NotificationsToggle />
+          <RefreshIntervalField />
+          <PrimaryButton Icon={RefreshIcon} onClick={monitor.refresh}>
+            Refresh
+          </PrimaryButton>
         </Div>
       </Div>
       {monitor.isReady.get() ? (
