@@ -94,7 +94,7 @@ All settings are in **Lens Preferences → Extensions → Multi-Cluster View**; 
 | Situation | What the view does |
 | --- | --- |
 | A cluster appears, such as one Lens finds in your Azure account | Connects it at once |
-| A cluster fails to connect | Tries again after 30 seconds, then 1, 2, 4 minutes, up to every 10; the card says when |
+| A cluster fails to connect | Tries again after 1 minute, then 2, 4 and 8, up to every 10 (with Auto-refresh at 30 seconds); the card says when |
 | You disconnect a cluster | Leaves it disconnected until you press **Connect** on its card |
 | A connection never answers | Gives up after 60 seconds and tries again later |
 
