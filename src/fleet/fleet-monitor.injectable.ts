@@ -45,6 +45,7 @@ import {
 } from "./fleet-model";
 import { alertMutesInjectable } from "./alert-mutes.injectable";
 import { selectNotifiable } from "./notification-policy";
+import { silencedAlertsInjectable } from "./silenced-alerts.injectable";
 import { notificationSettingsInjectable } from "./notification-settings.injectable";
 import { notifyCriticalAlertInjectable } from "./notify-critical-alert.injectable";
 import { eventKind } from "./event-kind";
@@ -147,6 +148,7 @@ export const fleetMonitorInjectable = getInjectable2({
     const showErrorNotification = di.inject(showErrorNotificationInjectionToken)();
     const notifyCriticalAlert = di.inject(notifyCriticalAlertInjectable)();
     const notificationSettings = di.inject(notificationSettingsInjectable)();
+    const silencedAlerts = di.inject(silencedAlertsInjectable)();
     const pollIntervalMs = computed(() => refreshInterval.seconds.get() * 1000);
 
     const records = observable.box<IComputedValue<ClusterRecord[]> | undefined>(undefined, { deep: false });
@@ -490,7 +492,7 @@ export const fleetMonitorInjectable = getInjectable2({
       };
 
       return reaction(
-        () => alerts.get().filter((alert) => alert.severity === "critical"),
+        () => alerts.get().filter((alert) => alert.severity === "critical" && !silencedAlerts.isSilenced(alert.key)),
         (critical) => {
           const fresh = selectNotifiable(critical, seen, {
             now: Date.now(),

@@ -7,11 +7,12 @@ import { askAiAboutAlertInjectable } from "./ask-ai-about-alert.injectable";
 import type { FleetAlert } from "./fleet-model";
 import { goToAlertInjectable } from "./go-to-alert.injectable";
 import { notificationSettingsInjectable } from "./notification-settings.injectable";
+import { silencedAlertsInjectable } from "./silenced-alerts.injectable";
 import { SparkleIcon } from "./sparkle-icon";
 
 // A critical alert as a Lens notification the user can act on from where they are: open what it is about,
-// troubleshoot it with Ask AI, mute it for a day, pause every notification for a day, or turn them off. Each of
-// those also dismisses the notification.
+// troubleshoot it with Ask AI, mute it for a day, pause every notification for a day, or never be notified about
+// this alert again. Each of those also dismisses the notification.
 export const notifyCriticalAlertInjectable = getInjectable2({
   id: "fleet-overview-notify-critical-alert",
   consumptions: [showErrorNotificationInjectionToken],
@@ -22,6 +23,7 @@ export const notifyCriticalAlertInjectable = getInjectable2({
     const askAiAboutAlert = di.inject(askAiAboutAlertInjectable)();
     const mutes = di.inject(alertMutesInjectable)();
     const notificationSettings = di.inject(notificationSettingsInjectable)();
+    const silencedAlerts = di.inject(silencedAlertsInjectable)();
 
     return () => (alert: FleetAlert, clusterName: string) => {
       let dismiss: (() => void) | undefined;
@@ -83,11 +85,11 @@ export const notifyCriticalAlertInjectable = getInjectable2({
             role="checkbox"
             aria-checked={false}
             $flex={{ gap: "xs", verticalAlign: "center" }}
-            $onClick={andDismiss(notificationSettings.turnOff)}
-            $tooltip="Turn notifications off until you turn them back on in Multi-Cluster View"
+            $onClick={andDismiss(() => silencedAlerts.silence(alert.key))}
+            $tooltip="No more notifications for this alert. It stays listed in Multi-Cluster View, where its row can turn them back on"
           >
             <Span aria-hidden="true">☐</Span>
-            Never notify me
+            Never notify me about this alert
           </ClickableDiv>
         </Div>,
       );

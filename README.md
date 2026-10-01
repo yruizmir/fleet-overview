@@ -4,7 +4,7 @@ One view of all your clusters in Lens: the physical resources and the alerts of 
 
 When something breaks, it tells you, and lets you act on it from right there:
 
-![A critical alert as Multi-Cluster View notifies it: a container in CrashLoopBackOff, with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me](assets/screenshots/notification.png)
+![A critical alert as Multi-Cluster View notifies it: a container in CrashLoopBackOff, with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me about this alert](assets/screenshots/notification.png)
 
 ## Open it
 
@@ -34,7 +34,7 @@ One panel for all connected clusters, most severe first:
 
 A critical issue, as it reaches you: a container that keeps crashing, with what it last exited with and a note when the pod still shows Running, and what you can do about it from right there.
 
-![Example of a critical issue: a CrashLoopBackOff notification with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me](assets/screenshots/notification.png)
+![Example of a critical issue: a CrashLoopBackOff notification with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me about this alert](assets/screenshots/notification.png)
 
 Filter by severity (All, Critical, Warning, Info) or by one cluster (click its alert count on its card). Click an alert to go to its pod, node, workload or namespace.
 
@@ -61,6 +61,7 @@ A critical alert that appears while Lens is open raises a notification, a few at
 
 - **Open** goes to what the alert is about, **Ask AI** troubleshoots it.
 - **Mute 24h** mutes that alert for a day.
-- **Mute all 24h** pauses every notification for a day; **Never notify me** turns them off.
+- **Mute all 24h** pauses every notification for a day.
+- **Never notify me about this alert** stops notifications for that alert only; it stays listed and counted, and its row in the view shows **🔕 Notify again** to undo it.
 
-Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off** at the top of the view shows which it is and turns them back on. What fires during a pause does not all arrive at once when it ends.
+Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off** at the top of the view shows which it is, turns them all off, and turns them back on. What fires during a pause does not all arrive at once when it ends.

@@ -15,6 +15,7 @@ import { askAiAboutAlertInjectable } from "./ask-ai-about-alert.injectable";
 import { goToAlertInjectable, goToClusterInjectable } from "./go-to-alert.injectable";
 import { notificationSettingsInjectable } from "./notification-settings.injectable";
 import { refreshIntervalInjectable } from "./refresh-interval.injectable";
+import { silencedAlertsInjectable } from "./silenced-alerts.injectable";
 import { ResourceRings } from "./resource-rings";
 import { SparkleIcon } from "./sparkle-icon";
 import { formatBytes, formatCores, formatCount, percentOf } from "./quantity";
@@ -288,6 +289,28 @@ const MuteButton = observer(({ alert }: { alert: FleetAlert }) => {
   );
 });
 
+// Shown on an alert the user chose never to be notified about, to turn its notifications back on.
+const NotifyAgainButton = observer(({ alert }: { alert: FleetAlert }) => {
+  const silencedAlerts = useInject(silencedAlertsInjectable)();
+
+  if (!silencedAlerts.isSilenced(alert.key)) {
+    return null;
+  }
+
+  return (
+    <Span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <PlainButton
+        onClick={() => silencedAlerts.unsilence(alert.key)}
+        $tooltip="You chose never to be notified about this alert. Click to be notified again"
+        $padding={{ horizontal: "s", vertical: "xxs" }}
+        $font={{ size: "s" }}
+      >
+        🔕 Notify again
+      </PlainButton>
+    </Span>
+  );
+});
+
 const AlertRow = observer(({ alert }: { alert: FleetAlert }) => {
   const goToAlert = useInject(goToAlertInjectable)();
   const cluster = useInject(fleetMonitorInjectable)()
@@ -320,6 +343,7 @@ const AlertRow = observer(({ alert }: { alert: FleetAlert }) => {
           <Badge small label={cluster?.record.name.get() ?? alert.clusterId} $backgroundColor="grey60" $color="textHighlight" />
           <Badge small label={sourceLabel[alert.source]} $backgroundColor="grey70" $color="textDefault" />
           <Span $flexChild />
+          <NotifyAgainButton alert={alert} />
           <MuteButton alert={alert} />
           <AskAiButton alert={alert} clusterName={cluster?.record.name.get() ?? alert.clusterId} />
         </Div>
@@ -793,7 +817,7 @@ const RefreshIntervalField = observer(() => {
 });
 
 // Whether critical alerts raise notifications: on, paused for a day, or off. Also the way back after "Mute all
-// 24h" or "Never notify me" in a notification.
+// 24h" in a notification.
 const NotificationsToggle = observer(() => {
   const settings = useInject(notificationSettingsInjectable)();
   const state = settings.state.get();
