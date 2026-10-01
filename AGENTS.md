@@ -17,3 +17,7 @@ The scaffold ships with a pre-built `dist/index.js` placeholder, so the extensio
 ## Dependency versions follow the Lens build
 
 Lens serves `react`, `mobx`, `@k8slens/*` and `@lensapp/*` to this extension from its own bundle, and refuses to load the extension when a range declared in `package.json` for one of them does not match the bundled version. The README above lists those versions under "Dependency versions in this Lens build". Declare `^<version>` for each host-provided package you use, and re-check after every Lens upgrade. In Claude Code, `/lens-extension-development-sync-dependencies` rewrites the ranges, reinstalls and rebuilds for you.
+
+## Tests
+
+`npm test` runs the alert rules' tests (`src/**/*.test.ts`) with Node's test runner. Run it after changing `src/fleet/fleet-model.ts`.

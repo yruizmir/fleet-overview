@@ -8,6 +8,7 @@ const sourceText: Record<FleetAlert["source"], string> = {
   node: "a node condition reported by the node's status",
   pod: "a pod container state reported by the pod's status",
   event: "Kubernetes Warning events, grouped by object and reason",
+  workload: "a workload's status: replicas available, Job conditions or a volume claim's phase",
 };
 
 const targetText = (alert: FleetAlert) => {
@@ -20,6 +21,8 @@ const targetText = (alert: FleetAlert) => {
       return `the node ${target.name}`;
     case "namespace":
       return `the namespace ${target.namespace}`;
+    case "workload":
+      return `the ${target.kind} ${target.namespace}/${target.name}`;
     case "cluster":
       return "the cluster as a whole";
   }
@@ -36,6 +39,8 @@ const inspectText = (alert: FleetAlert) => {
       return `kubectl describe node ${target.name}`;
     case "namespace":
       return `kubectl get pods,events -n ${target.namespace}`;
+    case "workload":
+      return `kubectl describe ${target.kind.toLowerCase()} ${target.name} -n ${target.namespace}`;
     case "cluster":
       return "kubectl get nodes; kubectl get events -A --field-selector type=Warning";
   }
@@ -58,6 +63,13 @@ const logsText = (alert: FleetAlert): string[] => {
         `kubectl get pods -A --field-selector spec.nodeName=${target.name}`,
         `kubectl get --raw "/api/v1/nodes/${target.name}/proxy/logs/?query=kubelet&tailLines=200"`,
       ];
+    case "workload":
+      return target.kind === "PersistentVolumeClaim"
+        ? [`kubectl get events -n ${target.namespace} --field-selector involvedObject.name=${target.name}`]
+        : [
+            `kubectl logs ${target.kind.toLowerCase()}/${target.name} -n ${target.namespace} --all-containers --tail=200`,
+            `kubectl get events -n ${target.namespace} --field-selector involvedObject.name=${target.name}`,
+          ];
     case "namespace":
       return [
         `kubectl get pods -n ${target.namespace}`,

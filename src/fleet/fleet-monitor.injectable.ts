@@ -4,7 +4,27 @@ import {
   connectClusterInjectionToken,
 } from "@k8slens/cluster-contracts";
 import { getInjectable2 } from "@k8slens/injectable";
-import { coreV1, kubeResourcesInjectionToken, type NodeV1, nodeKind, type PodV1, podKind } from "@k8slens/kubernetes-contracts";
+import {
+  appsV1,
+  batchV1,
+  coreV1,
+  daemonSetKind,
+  type DaemonSetV1,
+  deploymentKind,
+  type DeploymentV1,
+  jobKind,
+  type JobV1,
+  kubeResourcesInjectionToken,
+  type NodeV1,
+  nodeKind,
+  persistentVolumeClaimKind,
+  type PersistentVolumeClaimV1,
+  type PodV1,
+  podKind,
+  statefulSetKind,
+  type StatefulSetV1,
+} from "@k8slens/kubernetes-contracts";
+import { showErrorNotificationInjectionToken } from "@k8slens/notifications-contracts";
 import { queryPrometheusRangeInjectionToken } from "@k8slens/prometheus-contracts";
 import type { Subscription } from "@k8slens/subscribable";
 import { action, computed, type IComputedValue, type IObservableValue, observable, reaction, runInAction } from "mobx";
@@ -21,7 +41,9 @@ import {
   type PrometheusSample,
   severityOrder,
   summarizeResources,
+  workloadAlerts,
 } from "./fleet-model";
+import { alertMutesInjectable } from "./alert-mutes.injectable";
 import { eventKind } from "./event-kind";
 import { refreshIntervalInjectable } from "./refresh-interval.injectable";
 
@@ -39,8 +61,14 @@ interface Tracked {
   readonly nodes: IObservableValue<Loadable<readonly NodeV1[]>>;
   readonly pods: IObservableValue<Loadable<readonly PodV1[]>>;
   readonly events: IObservableValue<Loadable<readonly EventV1[]>>;
+  readonly deployments: IObservableValue<Loadable<readonly DeploymentV1[]>>;
+  readonly statefulSets: IObservableValue<Loadable<readonly StatefulSetV1[]>>;
+  readonly daemonSets: IObservableValue<Loadable<readonly DaemonSetV1[]>>;
+  readonly jobs: IObservableValue<Loadable<readonly JobV1[]>>;
+  readonly claims: IObservableValue<Loadable<readonly PersistentVolumeClaimV1[]>>;
   readonly prometheus: IObservableValue<PrometheusState>;
   readonly subscriptions: Subscription<unknown>[];
+  readonly trackedAt: number;
 }
 
 export interface ClusterView {
@@ -48,15 +76,36 @@ export interface ClusterView {
   readonly connected: boolean;
   readonly connecting: boolean;
   readonly connectError?: string;
+  // Disconnected by the user while the view was open: not reconnected until they press Connect.
+  readonly autoConnectPaused: boolean;
+  // When the next automatic attempt is due for a cluster that keeps failing to connect.
+  readonly nextAttemptAt?: number;
   readonly loading: boolean;
   readonly error?: string;
   readonly resources?: ClusterResources;
   readonly prometheus: PrometheusState | undefined;
+  // Firing and not muted; what the counts, the status bar and the notifications go by.
   readonly alerts: readonly FleetAlert[];
+  readonly mutedAlerts: readonly FleetAlert[];
+  // The kubelet version most of its nodes run, "v1.31.2".
+  readonly version?: string;
 }
 
 const connectTimeoutMs = 60_000;
 const unavailableRetryMs = 5 * 60_000;
+// A cluster that keeps failing to connect is tried less and less often, up to this far apart.
+const maxConnectBackoffMs = 10 * 60_000;
+// A cluster's alerts in its first minute of being watched are what it already had: no notification for those.
+const notifyAfterMs = 60_000;
+const maxNotificationsAtOnce = 3;
+const mostCommon = (values: readonly (string | undefined)[]) => {
+  const counts = new Map<string, number>();
+
+  values.forEach((value) => value && counts.set(value, (counts.get(value) ?? 0) + 1));
+
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+};
+
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const queries = {
@@ -81,6 +130,7 @@ export const fleetMonitorInjectable = getInjectable2({
     connectClusterInjectionToken,
     kubeResourcesInjectionToken,
     queryPrometheusRangeInjectionToken,
+    showErrorNotificationInjectionToken,
   ],
 
   instantiate: (di) => {
@@ -89,6 +139,8 @@ export const fleetMonitorInjectable = getInjectable2({
     const kubeResources = di.inject(kubeResourcesInjectionToken)();
     const queryPrometheusRange = di.inject(queryPrometheusRangeInjectionToken)();
     const refreshInterval = di.inject(refreshIntervalInjectable)();
+    const mutes = di.inject(alertMutesInjectable)();
+    const showErrorNotification = di.inject(showErrorNotificationInjectionToken)();
     const pollIntervalMs = computed(() => refreshInterval.seconds.get() * 1000);
 
     const records = observable.box<IComputedValue<ClusterRecord[]> | undefined>(undefined, { deep: false });
@@ -96,6 +148,12 @@ export const fleetMonitorInjectable = getInjectable2({
     const connecting = observable.map<string, "connecting" | { error: string }>();
     const now = observable.box(Date.now());
     const lastRefresh = observable.box<number | undefined>(undefined);
+    // How many surfaces want clusters connected for them (the dashboard), as opposed to only watching those
+    // already connected (the status bar).
+    const autoConnectUsers = observable.box(0);
+    const paused = observable.set<string>();
+    const failures = observable.map<string, number>();
+    const lastAttempt = observable.map<string, number>();
 
     let users = 0;
     let stopRunning: (() => void) | undefined;
@@ -185,19 +243,34 @@ export const fleetMonitorInjectable = getInjectable2({
         nodes: observable.box<Loadable<readonly NodeV1[]>>({ status: "loading" }, { deep: false }),
         pods: observable.box<Loadable<readonly PodV1[]>>({ status: "loading" }, { deep: false }),
         events: observable.box<Loadable<readonly EventV1[]>>({ status: "loading" }, { deep: false }),
+        deployments: observable.box<Loadable<readonly DeploymentV1[]>>({ status: "loading" }, { deep: false }),
+        statefulSets: observable.box<Loadable<readonly StatefulSetV1[]>>({ status: "loading" }, { deep: false }),
+        daemonSets: observable.box<Loadable<readonly DaemonSetV1[]>>({ status: "loading" }, { deep: false }),
+        jobs: observable.box<Loadable<readonly JobV1[]>>({ status: "loading" }, { deep: false }),
+        claims: observable.box<Loadable<readonly PersistentVolumeClaimV1[]>>({ status: "loading" }, { deep: false }),
         prometheus: observable.box<PrometheusState>({ status: "loading" }, { deep: false }),
         subscriptions: [],
+        trackedAt: Date.now(),
       };
       const nodes = kubeResources(nodeKind, coreV1, clusterId).subscribe();
       const pods = kubeResources(podKind, coreV1, clusterId).subscribe();
-
       const events = kubeResources(eventKind, coreV1, clusterId).subscribe();
+      const deployments = kubeResources(deploymentKind, appsV1, clusterId).subscribe();
+      const statefulSets = kubeResources(statefulSetKind, appsV1, clusterId).subscribe();
+      const daemonSets = kubeResources(daemonSetKind, appsV1, clusterId).subscribe();
+      const jobs = kubeResources(jobKind, batchV1, clusterId).subscribe();
+      const claims = kubeResources(persistentVolumeClaimKind, coreV1, clusterId).subscribe();
 
-      entry.subscriptions.push(nodes, pods, events);
+      entry.subscriptions.push(nodes, pods, events, deployments, statefulSets, daemonSets, jobs, claims);
       tracked.set(clusterId, entry);
       load(entry.nodes, nodes);
       load(entry.pods, pods);
       load(entry.events, events);
+      load(entry.deployments, deployments);
+      load(entry.statefulSets, statefulSets);
+      load(entry.daemonSets, daemonSets);
+      load(entry.jobs, jobs);
+      load(entry.claims, claims);
       void pollPrometheus(clusterId, true);
     });
 
@@ -220,7 +293,7 @@ export const fleetMonitorInjectable = getInjectable2({
       let stopReaction: (() => void) | undefined;
       let stopAutoConnect: (() => void) | undefined;
       let retryDisconnected: (() => void) | undefined;
-      const lastAttempt = new Map<string, number>();
+      let stopNotifications: (() => void) | undefined;
 
       void allClusterRecords().then((computedRecords) => {
         if (stopped) {
@@ -230,28 +303,45 @@ export const fleetMonitorInjectable = getInjectable2({
         runInAction(() => records.set(computedRecords));
 
         // While the dashboard is open, every cluster it lists is kept connected: one that appears (clusters
-        // discovered from a cloud account arrive late) is connected at once, and one that is down, failed or
-        // was disconnected is tried again every refresh interval.
+        // discovered from a cloud account arrive late) is connected at once, and one that is down or failed is
+        // tried again, less often each time it fails. One the user disconnects stays disconnected.
         const disconnectedIds = () =>
-          clusters.get().filter((cluster) => !cluster.connected && !cluster.connecting).map((cluster) => cluster.record.id);
+          autoConnectUsers.get() > 0
+            ? clusters
+                .get()
+                .filter((cluster) => !cluster.connected && !cluster.connecting && !cluster.autoConnectPaused)
+                .map((cluster) => cluster.record.id)
+            : [];
 
         const connectDue = (ids: string[]) => {
-          const now = Date.now();
+          const at = Date.now();
 
           for (const id of ids) {
-            if (now - (lastAttempt.get(id) ?? 0) >= pollIntervalMs.get()) {
-              lastAttempt.set(id, now);
-              void connect(id);
+            if (at >= nextAttemptAt(id)) {
+              void attempt(id);
             }
           }
         };
 
         stopAutoConnect = reaction(disconnectedIds, connectDue, { fireImmediately: true });
         retryDisconnected = () => connectDue(disconnectedIds());
+        stopNotifications = notifyNewCriticals();
+
+        let previouslyConnected: string[] = [];
 
         stopReaction = reaction(
           () => computedRecords.get().filter((record) => record.isConnected.get()).map((record) => record.id),
           (connectedIds) => {
+            // Connected a moment ago and not now, and not by a failure of ours: the user disconnected it.
+            runInAction(() => {
+              for (const id of previouslyConnected) {
+                if (!connectedIds.includes(id) && !connecting.has(id)) {
+                  paused.add(id);
+                }
+              }
+            });
+            previouslyConnected = connectedIds;
+
             for (const id of connectedIds) {
               if (!tracked.has(id)) {
                 track(id);
@@ -294,6 +384,7 @@ export const fleetMonitorInjectable = getInjectable2({
         clearInterval(timer);
         stopReaction?.();
         stopAutoConnect?.();
+        stopNotifications?.();
         [...tracked.keys()].forEach(untrack);
       };
     };
@@ -306,10 +397,12 @@ export const fleetMonitorInjectable = getInjectable2({
         connected: record.isConnected.get(),
         connecting: connectState === "connecting",
         connectError: typeof connectState === "object" ? connectState.error : undefined,
+        autoConnectPaused: paused.has(record.id),
+        nextAttemptAt: failures.has(record.id) ? nextAttemptAt(record.id) : undefined,
       };
 
       if (!entry) {
-        return { ...base, loading: false, prometheus: undefined, alerts: [] };
+        return { ...base, loading: false, prometheus: undefined, alerts: [], mutedAlerts: [] };
       }
 
       const nodes = entry.nodes.get();
@@ -319,12 +412,25 @@ export const fleetMonitorInjectable = getInjectable2({
       const podList = pods.status === "ready" ? pods.value.get() : [];
       const events = entry.events.get();
       const eventList = events.status === "ready" ? events.value.get() : [];
+      const ready = <T>(box: IObservableValue<Loadable<readonly T[]>>) => {
+        const value = box.get();
+
+        return value.status === "ready" ? value.value.get() : [];
+      };
+      const workloads = {
+        deployments: ready(entry.deployments),
+        statefulSets: ready(entry.statefulSets),
+        daemonSets: ready(entry.daemonSets),
+        jobs: ready(entry.jobs),
+        claims: ready(entry.claims),
+      };
       const sample = prometheus.status === "ready" ? prometheus.sample : undefined;
       const error = nodes.status === "error" ? nodes.error : pods.status === "error" ? pods.error : undefined;
-      const alerts = [
+      const firing = [
         ...(sample?.alerts ?? []),
         ...nodeAlerts(record.id, nodeList),
         ...podAlerts(record.id, podList, now.get()),
+        ...workloadAlerts(record.id, workloads, now.get()),
         ...eventAlerts(record.id, eventList),
       ];
 
@@ -336,7 +442,9 @@ export const fleetMonitorInjectable = getInjectable2({
         error,
         resources,
         prometheus,
-        alerts,
+        alerts: firing.filter((alert) => !mutes.isMuted(alert.key)),
+        mutedAlerts: firing.filter((alert) => mutes.isMuted(alert.key)),
+        version: mostCommon(nodeList.map((node) => node.status?.nodeInfo?.kubeletVersion)),
       };
     };
 
@@ -353,12 +461,54 @@ export const fleetMonitorInjectable = getInjectable2({
         .sort((a, b) => Number(b.connected) - Number(a.connected) || a.record.name.get().localeCompare(b.record.name.get())),
     );
 
-    const alerts = computed(() =>
-      clusters
-        .get()
-        .flatMap((cluster) => cluster.alerts)
-        .sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || (b.since ?? 0) - (a.since ?? 0)),
-    );
+    const bySeverity = (a: FleetAlert, b: FleetAlert) =>
+      severityOrder[a.severity] - severityOrder[b.severity] || (b.since ?? 0) - (a.since ?? 0);
+
+    const alerts = computed(() => clusters.get().flatMap((cluster) => cluster.alerts).sort(bySeverity));
+    const mutedAlerts = computed(() => clusters.get().flatMap((cluster) => cluster.mutedAlerts).sort(bySeverity));
+
+    // A critical alert that was not there before raises a Lens notification, wherever the user is. Not for what
+    // a cluster already had when it started being watched, not for a muted alert, and a few at most at once.
+    const notifyNewCriticals = () => {
+      const notified = new Set<string>();
+
+      return reaction(
+        () => alerts.get().filter((alert) => alert.severity === "critical"),
+        (critical) => {
+          const fresh = critical.filter((alert) => {
+            const entry = tracked.get(alert.clusterId);
+
+            return !notified.has(alert.key) && entry !== undefined && Date.now() - entry.trackedAt > notifyAfterMs;
+          });
+
+          // Seen ones are remembered even when not notified, and forgotten once resolved so a relapse notifies.
+          critical.filter((alert) => {
+            const entry = tracked.get(alert.clusterId);
+
+            return entry !== undefined && Date.now() - entry.trackedAt <= notifyAfterMs;
+          }).forEach((alert) => notified.add(alert.key));
+
+          for (const key of [...notified]) {
+            if (!critical.some((alert) => alert.key === key)) {
+              notified.delete(key);
+            }
+          }
+
+          const nameOf = (clusterId: string) =>
+            records.get()?.get().find((record) => record.id === clusterId)?.name.get() ?? clusterId;
+
+          fresh.slice(0, maxNotificationsAtOnce).forEach((alert) =>
+            showErrorNotification(`Critical on ${nameOf(alert.clusterId)}: ${alert.title}. ${alert.detail}`),
+          );
+
+          if (fresh.length > maxNotificationsAtOnce) {
+            showErrorNotification(`${fresh.length - maxNotificationsAtOnce} more critical alerts. Open Multi-Cluster View to see them.`);
+          }
+
+          fresh.forEach((alert) => notified.add(alert.key));
+        },
+      );
+    };
 
     const sumResource = (pick: (resources: ClusterResources) => Resource, list: ClusterResources[]): Resource => {
       const withUsage = list.filter((resources) => pick(resources).used !== undefined);
@@ -394,8 +544,19 @@ export const fleetMonitorInjectable = getInjectable2({
       };
     });
 
-    const connect = async (clusterId: string) => {
-      runInAction(() => connecting.set(clusterId, "connecting"));
+    const nextAttemptAt = (clusterId: string) => {
+      const failed = failures.get(clusterId) ?? 0;
+      const delay = failed === 0 ? pollIntervalMs.get() : Math.min(pollIntervalMs.get() * 2 ** failed, maxConnectBackoffMs);
+
+      return (lastAttempt.get(clusterId) ?? 0) + delay;
+    };
+
+    // One connection attempt, automatic or not; a failure doubles the wait before the next automatic one.
+    const attempt = async (clusterId: string) => {
+      runInAction(() => {
+        lastAttempt.set(clusterId, Date.now());
+        connecting.set(clusterId, "connecting");
+      });
 
       let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -406,24 +567,46 @@ export const fleetMonitorInjectable = getInjectable2({
 
       try {
         await Promise.race([connectCluster(clusterId), timeout]);
-        runInAction(() => connecting.delete(clusterId));
+        runInAction(() => {
+          connecting.delete(clusterId);
+          failures.delete(clusterId);
+        });
       } catch (error) {
-        runInAction(() => connecting.set(clusterId, { error: errorText(error) }));
+        runInAction(() => {
+          connecting.set(clusterId, { error: errorText(error) });
+          failures.set(clusterId, (failures.get(clusterId) ?? 0) + 1);
+        });
       } finally {
         clearTimeout(timer);
       }
     };
 
+    // The user asked: connect now, and keep it connected again from here on.
+    const connect = (clusterId: string) => {
+      runInAction(() => {
+        paused.delete(clusterId);
+        failures.delete(clusterId);
+      });
+
+      return attempt(clusterId);
+    };
+
     return () => ({
       clusters,
       alerts,
+      mutedAlerts,
       totals,
       isReady: computed(() => records.get() !== undefined),
       lastRefresh: computed(() => lastRefresh.get()),
 
-      // Keeps the watches and polling alive while at least one dashboard is on screen.
-      start: () => {
+      // Keeps the watches and polling alive while something is on screen that shows them: the dashboard, which
+      // also connects the clusters (`autoConnect`), or the status bar, which only watches those connected already.
+      start: ({ autoConnect }: { autoConnect: boolean }) => {
         users++;
+
+        if (autoConnect) {
+          runInAction(() => autoConnectUsers.set(autoConnectUsers.get() + 1));
+        }
 
         if (users === 1) {
           stopRunning = run();
@@ -431,6 +614,10 @@ export const fleetMonitorInjectable = getInjectable2({
 
         return () => {
           users--;
+
+          if (autoConnect) {
+            runInAction(() => autoConnectUsers.set(autoConnectUsers.get() - 1));
+          }
 
           if (users === 0) {
             stopRunning?.();

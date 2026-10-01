@@ -7,8 +7,9 @@ import { observer } from "mobx-react";
 import { type KeyboardEvent, type ReactNode, useEffect } from "react";
 import styles from "./fleet-dashboard.module.scss";
 import { clusterSourcesInjectable } from "./cluster-sources.injectable";
+import { alertMutesInjectable } from "./alert-mutes.injectable";
 import { fleetFilterInjectable } from "./fleet-filter.injectable";
-import type { FleetAlert, Resource, Severity } from "./fleet-model";
+import { type FleetAlert, formatAge, type Resource, type Severity } from "./fleet-model";
 import { type ClusterView, fleetMonitorInjectable } from "./fleet-monitor.injectable";
 import { askAiAboutAlertInjectable } from "./ask-ai-about-alert.injectable";
 import { goToAlertInjectable, goToClusterInjectable } from "./go-to-alert.injectable";
@@ -28,7 +29,13 @@ const severityTone: Record<Severity, "critical" | "warning" | "primary"> = {
   info: "primary",
 };
 
-const sourceLabel: Record<FleetAlert["source"], string> = { prometheus: "Prometheus", node: "Nodes", pod: "Pods", event: "Events" };
+const sourceLabel: Record<FleetAlert["source"], string> = {
+  prometheus: "Prometheus",
+  node: "Nodes",
+  pod: "Pods",
+  event: "Events",
+  workload: "Workloads",
+};
 
 const timeAgo = (since: number | undefined) => {
   if (!since) {
@@ -139,14 +146,25 @@ const ClusterStatus = ({ cluster }: { cluster: ClusterView }) => {
   const monitor = useInject(fleetMonitorInjectable)();
 
   if (!cluster.connected) {
+    const retryIn = cluster.nextAttemptAt !== undefined ? cluster.nextAttemptAt - Date.now() : undefined;
+
     return (
       <Div $flex={{ direction: "vertical", gap: "xxs", horizontalAlign: "right" }}>
         <PlainButton $disabled={cluster.connecting} onClick={() => void monitor.connect(cluster.record.id)}>
           {cluster.connecting ? "Connecting…" : "Connect"}
         </PlainButton>
-        {cluster.connectError && (
-          <Span $color="critical" $font={{ size: "s" }} $tooltip={cluster.connectError}>
-            Failed to connect
+        {cluster.autoConnectPaused && !cluster.connecting && (
+          <Span $color="textMuted" $font={{ size: "s" }} $tooltip="You disconnected it, so it is not reconnected automatically">
+            Disconnected
+          </Span>
+        )}
+        {cluster.connectError && !cluster.autoConnectPaused && (
+          <Span
+            $color="critical"
+            $font={{ size: "s" }}
+            $tooltip={`${cluster.connectError}. Tried again less often each time it fails, up to every 10 minutes.`}
+          >
+            Failed to connect{retryIn !== undefined && retryIn > 0 ? ` · retry in ${formatAge(retryIn)}` : ""}
           </Span>
         )}
       </Div>
@@ -252,6 +270,29 @@ const AskAiButton = ({ alert, clusterName }: { alert: FleetAlert; clusterName: s
   );
 };
 
+// Mutes an alert for a day, or unmutes it, without opening what the row links to.
+const MuteButton = observer(({ alert }: { alert: FleetAlert }) => {
+  const mutes = useInject(alertMutesInjectable)();
+  const until = mutes.mutedUntil(alert.key);
+
+  return (
+    <Span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <PlainButton
+        onClick={() => (until ? mutes.unmute(alert.key) : mutes.mute(alert.key))}
+        $tooltip={
+          until
+            ? `Muted for ${formatAge(until - Date.now())} more. Click to show it again`
+            : "Hide this alert for 24 hours: out of the counts, the status bar and the notifications"
+        }
+        $padding={{ horizontal: "s", vertical: "xxs" }}
+        $font={{ size: "s" }}
+      >
+        {until ? "Unmute" : "Mute 24h"}
+      </PlainButton>
+    </Span>
+  );
+});
+
 const AlertRow = observer(({ alert }: { alert: FleetAlert }) => {
   const goToAlert = useInject(goToAlertInjectable)();
   const cluster = useInject(fleetMonitorInjectable)()
@@ -284,6 +325,7 @@ const AlertRow = observer(({ alert }: { alert: FleetAlert }) => {
           <Badge small label={cluster?.record.name.get() ?? alert.clusterId} $backgroundColor="grey60" $color="textHighlight" />
           <Badge small label={sourceLabel[alert.source]} $backgroundColor="grey70" $color="textDefault" />
           <Span $flexChild />
+          <MuteButton alert={alert} />
           <AskAiButton alert={alert} clusterName={cluster?.record.name.get() ?? alert.clusterId} />
         </Div>
       </Div>
@@ -339,6 +381,7 @@ const AlertsPanel = observer(() => {
   const alerts = filter.visibleAlerts.get();
   const clusterId = filter.clusterId.get();
   const clusterName = monitor.clusters.get().find((cluster) => cluster.record.id === clusterId)?.record.name.get();
+  const mutedCount = monitor.mutedAlerts.get().length;
 
   return (
     <Div
@@ -364,13 +407,23 @@ const AlertsPanel = observer(() => {
             onToggle={() => filter.toggleSeverity(severity)}
           />
         ))}
+        <Span $flexChild />
         {clusterName && (
-          <>
-            <Span $flexChild />
-            <ClickableDiv $color="link" $onClick={() => filter.showCluster(undefined)} $tooltip="Show every cluster">
-              {clusterName} ✕
-            </ClickableDiv>
-          </>
+          <ClickableDiv $color="link" $onClick={() => filter.showCluster(undefined)} $tooltip="Show every cluster">
+            {clusterName} ✕
+          </ClickableDiv>
+        )}
+        {(mutedCount > 0 || filter.showMuted.get()) && (
+          <PlainButton
+            onClick={filter.toggleMuted}
+            $tooltip={filter.showMuted.get() ? "Back to the alerts that are not muted" : "Show the alerts you muted"}
+            $padding={{ horizontal: "m", vertical: "xs" }}
+            $border={{ color: "grey40", width: "xxs", radius: "m" }}
+            $backgroundColor={filter.showMuted.get() ? "grey40" : { normal: "transparent", hover: "backgroundSecondary" }}
+            $color="textHighlight"
+          >
+            Muted {mutedCount}
+          </PlainButton>
         )}
       </Div>
       <Div
@@ -385,7 +438,9 @@ const AlertsPanel = observer(() => {
         ))}
         {alerts.length === 0 && (
           <Div $padding="l">
-            <Span $color="textMuted">Nothing firing. Only connected clusters are checked.</Span>
+            <Span $color="textMuted">
+              {filter.showMuted.get() ? "Nothing muted." : "Nothing firing. Only connected clusters are checked."}
+            </Span>
           </Div>
         )}
       </Div>
@@ -502,6 +557,20 @@ const SourcePath = observer(({ clusterId }: { clusterId: string }) => {
   );
 });
 
+// Its Kubernetes version, in warning colour when it is two or more minor versions behind the newest cluster's.
+const ClusterVersion = observer(({ cluster }: { cluster: ClusterView }) => {
+  const behind = useInject(fleetFilterInjectable)().minorsBehind(cluster);
+
+  return (
+    <Span
+      $color={behind >= 2 ? "warning" : "textDefault"}
+      $tooltip={behind > 0 ? `${behind} minor version${behind === 1 ? "" : "s"} behind your newest cluster` : "Kubernetes version of its nodes"}
+    >
+      {cluster.version}
+    </Span>
+  );
+});
+
 const ClusterColumn = observer(({ cluster }: { cluster: ClusterView }) => {
   const goToCluster = useInject(goToClusterInjectable)();
   const resources = cluster.resources;
@@ -544,6 +613,7 @@ const ClusterColumn = observer(({ cluster }: { cluster: ClusterView }) => {
               <Span $color="textMuted">Nodes </Span>
               {resources.nodesReady}/{resources.nodesTotal}
             </Span>
+            {cluster.version && <ClusterVersion cluster={cluster} />}
             <Span>
               <Span $color="textMuted">Storage </Span>
               {resources.storage.used !== undefined ? formatBytes(resources.storage.used) : "—"}
@@ -588,11 +658,54 @@ const ClusterColumn = observer(({ cluster }: { cluster: ClusterView }) => {
   );
 });
 
+const sortLabels = { health: "Health", name: "Name" } as const;
+
+// Finding a cluster among many: by name, and the ones needing attention first.
+const ClusterToolbar = observer(() => {
+  const filter = useInject(fleetFilterInjectable)();
+
+  return (
+    <Div $flex={{ gap: "s", verticalAlign: "center", wrap: true }}>
+      <TextInput
+        type="search"
+        placeholder="Find a cluster"
+        aria-label="Find a cluster by name"
+        value={filter.clusterQuery.get()}
+        onChange={(event) => filter.searchClusters(event.target.value)}
+        $style={{ maxWidth: 260 }}
+      />
+      <Span $color="textMuted">Sort by</Span>
+      {(Object.keys(sortLabels) as (keyof typeof sortLabels)[]).map((sort) => {
+        const selected = filter.sortBy.get() === sort;
+
+        return (
+          <PlainButton
+            key={sort}
+            onClick={() => filter.sortClusters(sort)}
+            $tooltip={sort === "health" ? "Clusters with critical alerts first, disconnected ones last" : "Alphabetically"}
+            $padding={{ horizontal: "s", vertical: "xxs" }}
+            $border={{ color: "primary", width: "xxs", radius: "m" }}
+            $backgroundColor={selected ? "primary" : { normal: "transparent", hover: "backgroundSecondary" }}
+            $color={selected ? "white" : "textHighlight"}
+          >
+            {sortLabels[sort]}
+          </PlainButton>
+        );
+      })}
+    </Div>
+  );
+});
+
 const ClusterColumns = observer(() => {
-  const clusters = useInject(fleetMonitorInjectable)().clusters.get();
+  const all = useInject(fleetMonitorInjectable)().clusters.get();
+  const clusters = useInject(fleetFilterInjectable)().visibleClusters.get();
+
+  if (all.length === 0) {
+    return <Span $color="textMuted">No clusters yet. Add a kubeconfig to Lens to see it here.</Span>;
+  }
 
   if (clusters.length === 0) {
-    return <Span $color="textMuted">No clusters yet. Add a kubeconfig to Lens to see it here.</Span>;
+    return <Span $color="textMuted">No cluster matches that name.</Span>;
   }
 
   return (
@@ -690,7 +803,7 @@ export const FleetDashboard = observer(() => {
   const lastRefresh = monitor.lastRefresh.get();
 
   // Watches and Prometheus polling run only while the dashboard is on screen.
-  useEffect(() => monitor.start(), [monitor]);
+  useEffect(() => monitor.start({ autoConnect: true }), [monitor]);
 
   return (
     <Div $flex={{ direction: "vertical", gap: "l" }} $padding="xl" $height="full" $overflow="auto">
@@ -718,6 +831,7 @@ export const FleetDashboard = observer(() => {
           <SectionTitle title="Alerts" detail="Every connected cluster; click a cluster's alert count below to show only its alerts." />
           <AlertsPanel />
           <SectionTitle title="Capacity per cluster" />
+          <ClusterToolbar />
           <ClusterColumns />
         </>
       ) : (

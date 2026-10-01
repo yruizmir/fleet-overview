@@ -1,4 +1,13 @@
-import type { KubeResource, NodeV1, PodV1 } from "@k8slens/kubernetes-contracts";
+import type {
+  DaemonSetV1,
+  DeploymentV1,
+  JobV1,
+  KubeResource,
+  NodeV1,
+  PersistentVolumeClaimV1,
+  PodV1,
+  StatefulSetV1,
+} from "@k8slens/kubernetes-contracts";
 import type { PrometheusSeries } from "@k8slens/prometheus-contracts";
 import type { coreV1 } from "@k8slens/kubernetes-contracts";
 import type { eventKind } from "./event-kind";
@@ -10,16 +19,19 @@ export type Severity = "critical" | "warning" | "info";
 
 export const severityOrder: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
 
+export type WorkloadKind = "Deployment" | "StatefulSet" | "DaemonSet" | "Job" | "PersistentVolumeClaim";
+
 export type AlertTarget =
   | { readonly type: "node"; readonly name: string }
   | { readonly type: "pod"; readonly namespace: string; readonly name: string }
   | { readonly type: "namespace"; readonly namespace: string }
+  | { readonly type: "workload"; readonly kind: WorkloadKind; readonly namespace: string; readonly name: string }
   | { readonly type: "cluster" };
 
 export interface FleetAlert {
   readonly key: string;
   readonly clusterId: string;
-  readonly source: "prometheus" | "node" | "pod" | "event";
+  readonly source: "prometheus" | "node" | "pod" | "event" | "workload";
   readonly severity: Severity;
   readonly title: string;
   readonly detail: string;
@@ -187,77 +199,228 @@ const badWaitingReasons: Record<string, Severity> = {
   InvalidImageName: "warning",
 };
 
+const waitingText: Record<string, string> = {
+  CrashLoopBackOff: "keeps crashing and Kubernetes waits longer before each restart",
+  ImagePullBackOff: "cannot pull its image",
+  ErrImagePull: "cannot pull its image",
+  CreateContainerConfigError: "cannot start: its configuration refers to something missing (a ConfigMap, Secret or key)",
+  CreateContainerError: "cannot be created",
+  InvalidImageName: "names an image that is not valid",
+};
+
 const pendingTooLongMs = 10 * 60 * 1000;
+// A container that crashed this recently, after this many restarts, is still crash-looping even in the seconds it
+// shows as running between two crashes; without this the alert would come and go with every restart.
+const crashLoopWindowMs = 10 * 60 * 1000;
+const crashLoopRestarts = 3;
+// Restarts that are not a loop yet but are worth a look: this many, the last one within the hour.
+const frequentRestarts = 5;
+const hourMs = 60 * 60 * 1000;
+
+// "8d", "3h", "12m", "40s": how long ago, as a short duration.
+export const formatAge = (ms: number): string => {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.round(seconds / 60);
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.round(minutes / 60);
+
+  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+};
+
+type ContainerStatus = NonNullable<NonNullable<PodV1["status"]>["containerStatuses"]>[number];
+
+const lastExit = (status: ContainerStatus) => {
+  const terminated = status.lastState?.terminated;
+
+  if (!terminated) {
+    return "";
+  }
+
+  // A liveness probe kills with a clean exit, which reads as "Completed": say what really happened.
+  const why = terminated.reason === "Completed" && terminated.exitCode === 0 ? "stopped by Kubernetes, often a failing liveness probe" : terminated.reason ?? "exited";
+
+  return `; last exit: ${why}${terminated.exitCode ? `, code ${terminated.exitCode}` : ""}`;
+};
 
 export const podAlerts = (clusterId: string, pods: readonly PodV1[], now: number): FleetAlert[] =>
   pods.flatMap((pod): FleetAlert[] => {
     const { name, namespace } = pod.metadata;
     const target: AlertTarget = { type: "pod", namespace: namespace ?? "default", name };
     const statuses = [...(pod.status?.initContainerStatuses ?? []), ...(pod.status?.containerStatuses ?? [])];
+    const created = pod.metadata.creationTimestamp ? Date.parse(pod.metadata.creationTimestamp) : undefined;
+    const age = created ? `, pod started ${formatAge(now - created)} ago` : "";
+    // The phase is what Lens shows for the pod, and it stays Running while a container crash-loops.
+    const phase = pod.status?.phase === "Running" ? "; the pod still shows Running" : "";
+    const alert = (reason: string, severity: Severity, detail: string, since?: number): FleetAlert[] => [
+      { key: `${clusterId}/pod/${namespace}/${name}/${reason}`, clusterId, source: "pod", severity, title: reason, detail, since, target },
+    ];
 
     for (const status of statuses) {
       const reason = status.state?.waiting?.reason;
+      const finishedAt = status.lastState?.terminated?.finishedAt;
+      const lastCrash = finishedAt ? Date.parse(finishedAt) : undefined;
+      const restarts = `${status.restartCount} restart${status.restartCount === 1 ? "" : "s"}`;
 
       if (reason && badWaitingReasons[reason]) {
-        return [
-          {
-            key: `${clusterId}/pod/${namespace}/${name}/${reason}`,
-            clusterId,
-            source: "pod",
-            severity: badWaitingReasons[reason],
-            title: reason,
-            detail: `${namespace}/${name} (${status.name}, ${status.restartCount} restarts)`,
-            target,
-          },
-        ];
+        return alert(
+          reason,
+          badWaitingReasons[reason],
+          `${namespace}/${name}: container ${status.name} ${waitingText[reason]} (${restarts}${age}${reason === "CrashLoopBackOff" ? lastExit(status) : ""})${reason === "CrashLoopBackOff" ? phase : ""}`,
+          lastCrash ?? created,
+        );
       }
 
-      if (status.lastState?.terminated?.reason === "OOMKilled" && status.state?.running) {
-        const finishedAt = status.lastState.terminated.finishedAt;
-        const at = finishedAt ? Date.parse(finishedAt) : 0;
+      if (status.state?.running && lastCrash !== undefined) {
+        // Between two crashes: still the same CrashLoopBackOff alert, under the same key, so it does not flicker.
+        if (status.restartCount >= crashLoopRestarts && now - lastCrash < crashLoopWindowMs) {
+          return alert(
+            "CrashLoopBackOff",
+            "critical",
+            `${namespace}/${name}: container ${status.name} keeps crashing; it restarted ${formatAge(now - lastCrash)} ago and may crash again (${restarts}${age}${lastExit(status)})${phase}`,
+            lastCrash,
+          );
+        }
 
-        if (now - at < 60 * 60 * 1000) {
-          return [
-            {
-              key: `${clusterId}/pod/${namespace}/${name}/OOMKilled`,
-              clusterId,
-              source: "pod",
-              severity: "warning",
-              title: "OOMKilled",
-              detail: `${namespace}/${name} (${status.name}) was killed for running out of memory`,
-              since: at || undefined,
-              target,
-            },
-          ];
+        if (status.lastState?.terminated?.reason === "OOMKilled" && now - lastCrash < hourMs) {
+          return alert(
+            "OOMKilled",
+            "warning",
+            `${namespace}/${name}: container ${status.name} was killed ${formatAge(now - lastCrash)} ago for running out of memory (${restarts})`,
+            lastCrash,
+          );
+        }
+
+        if (status.restartCount >= frequentRestarts && now - lastCrash < hourMs) {
+          return alert(
+            "FrequentRestarts",
+            "warning",
+            `${namespace}/${name}: container ${status.name} restarts often, last ${formatAge(now - lastCrash)} ago (${restarts}${age}${lastExit(status)})`,
+            lastCrash,
+          );
         }
       }
     }
 
-    if (pod.status?.phase === "Pending") {
-      const created = pod.metadata.creationTimestamp ? Date.parse(pod.metadata.creationTimestamp) : now;
+    if (pod.status?.phase === "Pending" && created !== undefined && now - created > pendingTooLongMs) {
+      const unschedulable = pod.status.conditions?.find(
+        (condition) => condition.type === "PodScheduled" && condition.status === "False",
+      );
 
-      if (now - created > pendingTooLongMs) {
-        const unschedulable = pod.status.conditions?.find(
-          (condition) => condition.type === "PodScheduled" && condition.status === "False",
-        );
-
-        return [
-          {
-            key: `${clusterId}/pod/${namespace}/${name}/Pending`,
-            clusterId,
-            source: "pod",
-            severity: "warning",
-            title: unschedulable ? "PodUnschedulable" : "PodPendingTooLong",
-            detail: `${namespace}/${name}${unschedulable?.message ? `: ${unschedulable.message}` : ""}`,
-            since: created,
-            target,
-          },
-        ];
-      }
+      return alert(
+        "Pending",
+        "warning",
+        `${namespace}/${name} pending for ${formatAge(now - created)}${unschedulable?.message ? `: ${unschedulable.message}` : ""}`,
+        created,
+      ).map((one) => ({ ...one, title: unschedulable ? "PodUnschedulable" : "PodPendingTooLong" }));
     }
 
     return [];
   });
+
+export interface Workloads {
+  readonly deployments: readonly DeploymentV1[];
+  readonly statefulSets: readonly StatefulSetV1[];
+  readonly daemonSets: readonly DaemonSetV1[];
+  readonly jobs: readonly JobV1[];
+  readonly claims: readonly PersistentVolumeClaimV1[];
+}
+
+// A rollout or a new claim takes a while; only what stays short this long is a problem.
+const settleMs = 10 * 60 * 1000;
+const failedJobWindowMs = 24 * 60 * 60 * 1000;
+
+// Workloads short of what they asked for, Jobs that failed in the last day and claims that never got a volume.
+export const workloadAlerts = (clusterId: string, workloads: Workloads, now: number): FleetAlert[] => {
+  const alerts: FleetAlert[] = [];
+  const add = (kind: WorkloadKind, namespace: string | undefined, name: string, title: string, detail: string, since?: number) =>
+    alerts.push({
+      key: `${clusterId}/${kind}/${namespace}/${name}/${title}`,
+      clusterId,
+      source: "workload",
+      severity: "warning",
+      title,
+      detail,
+      since,
+      target: { type: "workload", kind, namespace: namespace ?? "default", name },
+    });
+  const settled = (time: string | undefined) => !time || now - Date.parse(time) > settleMs;
+
+  for (const deployment of workloads.deployments) {
+    const { name, namespace } = deployment.metadata;
+    const wanted = deployment.spec?.replicas ?? 1;
+    const available = deployment.status?.availableReplicas ?? 0;
+    const condition = deployment.status?.conditions?.find((one) => one.type === "Available" && one.status === "False");
+
+    if (wanted > 0 && available < wanted && condition && settled(condition.lastTransitionTime)) {
+      add(
+        "Deployment",
+        namespace,
+        name,
+        "DeploymentUnavailable",
+        `${namespace}/${name}: ${available} of ${wanted} replicas available for ${formatAge(now - Date.parse(condition.lastTransitionTime ?? ""))}`,
+        condition.lastTransitionTime ? Date.parse(condition.lastTransitionTime) : undefined,
+      );
+    }
+  }
+
+  for (const statefulSet of workloads.statefulSets) {
+    const { name, namespace, creationTimestamp } = statefulSet.metadata;
+    const wanted = statefulSet.spec?.replicas ?? 1;
+    const ready = statefulSet.status?.readyReplicas ?? 0;
+
+    if (wanted > 0 && ready < wanted && settled(creationTimestamp)) {
+      add("StatefulSet", namespace, name, "StatefulSetNotReady", `${namespace}/${name}: ${ready} of ${wanted} replicas ready`);
+    }
+  }
+
+  for (const daemonSet of workloads.daemonSets) {
+    const { name, namespace, creationTimestamp } = daemonSet.metadata;
+    const unavailable = daemonSet.status?.numberUnavailable ?? 0;
+    const wanted = daemonSet.status?.desiredNumberScheduled ?? 0;
+
+    if (unavailable > 0 && settled(creationTimestamp)) {
+      add("DaemonSet", namespace, name, "DaemonSetUnavailable", `${namespace}/${name}: ${unavailable} of ${wanted} pods unavailable`);
+    }
+  }
+
+  for (const job of workloads.jobs) {
+    const { name, namespace } = job.metadata;
+    const failed = job.status?.conditions?.find((one) => one.type === "Failed" && one.status === "True");
+    const at = failed?.lastTransitionTime ? Date.parse(failed.lastTransitionTime) : undefined;
+
+    if (failed && at !== undefined && now - at < failedJobWindowMs) {
+      add("Job", namespace, name, "JobFailed", `${namespace}/${name} failed ${formatAge(now - at)} ago${failed.message ? `: ${failed.message}` : ""}`, at);
+    }
+  }
+
+  for (const claim of workloads.claims) {
+    const { name, namespace, creationTimestamp } = claim.metadata;
+
+    if (claim.status?.phase === "Pending" && settled(creationTimestamp)) {
+      const created = creationTimestamp ? Date.parse(creationTimestamp) : undefined;
+
+      add(
+        "PersistentVolumeClaim",
+        namespace,
+        name,
+        "VolumeClaimPending",
+        `${namespace}/${name} has had no volume for ${created ? formatAge(now - created) : "a while"}`,
+        created,
+      );
+    }
+  }
+
+  return alerts;
+};
 
 const noiseAlerts = new Set(["Watchdog", "InfoInhibitor"]);
 

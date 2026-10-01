@@ -4,7 +4,14 @@ What changed in each version of this extension, newest first.
 
 ## 0.2.0
 
-- Clusters stay connected while the view is open: one Lens finds later, such as an AKS cluster, connects as soon as it appears, and one that is down or failed is tried again at every refresh.
+- Status bar: the critical and warning alerts of your connected clusters, wherever you are in Lens; click it to open the view.
+- Notifications for critical alerts that appear while Lens is open.
+- Mute an alert for 24 hours, and see the muted ones under Muted.
+- New alerts: Deployments and StatefulSets short of replicas, DaemonSets with unavailable pods, failed Jobs, volume claims without a volume, containers restarting often.
+- CrashLoopBackOff alerts stay listed between two crashes, say when the pod still shows Running, and tell a liveness probe kill from a crash.
+- Each card shows the cluster's Kubernetes version, in warning colour when it is two minor versions behind your newest cluster.
+- Find a cluster by name, and sort the cards by health or by name.
+- Clusters stay connected while the view is open: one Lens finds later, such as an AKS cluster, connects as soon as it appears, and one that is down is tried again less often each time it fails. One you disconnect stays disconnected until you press Connect.
 - Choose how often metrics refresh and clusters that are down are retried under Auto-refresh, next to Refresh: 30 seconds, 1, 2, 5 or 10 minutes.
 - Click a cluster's name or its CPU, memory and pods rings to open its Lens overview (needs the Lens CLI installed; opens its nodes otherwise).
 - Ask AI reads the affected pod's logs first, including the run that crashed, and quotes the lines that show the cause.
