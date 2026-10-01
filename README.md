@@ -28,6 +28,10 @@ One panel for all connected clusters, most severe first:
 - **Prometheus**: alerts that are firing (`ALERTS{alertstate="firing"}`), with the severity their rules give them, when the cluster has a Prometheus Lens can reach.
 - **Events**: Kubernetes Warning events, grouped per object and reason.
 
+A critical issue, as it reaches you: a container that keeps crashing, with what it last exited with and a note when the pod still shows Running, and what you can do about it from right there.
+
+![Example of a critical issue: a CrashLoopBackOff notification with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me](assets/screenshots/notification.png)
+
 Filter by severity (All, Critical, Warning, Info) or by one cluster (click its alert count on its card). Click an alert to go to its pod, node, workload or namespace.
 
 - **Ask AI** takes you to the affected resource and starts a troubleshooting conversation on that cluster, briefed with the alert, where to start looking and the logs to read first, including those of the run that crashed.
