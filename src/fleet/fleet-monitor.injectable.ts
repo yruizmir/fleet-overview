@@ -101,6 +101,7 @@ const maxConnectBackoffMs = 10 * 60_000;
 // A cluster's alerts in its first minute of being watched are what it already had: no notification for those.
 const notifyAfterMs = 60_000;
 const maxNotificationsAtOnce = 3;
+const clockTickMs = 10_000;
 const mostCommon = (values: readonly (string | undefined)[]) => {
   const counts = new Map<string, number>();
 
@@ -363,6 +364,10 @@ export const fleetMonitorInjectable = getInjectable2({
         );
       });
 
+      // The clock alerts measure ages and crash-loop windows by, ticking more often than the refresh so that a
+      // pod created between two refreshes does not read as created "0s ago".
+      const clock = setInterval(() => runInAction(() => now.set(Date.now())), clockTickMs);
+
       const tick = () => {
         runInAction(() => now.set(Date.now()));
         retryDisconnected?.();
@@ -387,6 +392,7 @@ export const fleetMonitorInjectable = getInjectable2({
         stopped = true;
         stopTimer();
         clearInterval(timer);
+        clearInterval(clock);
         stopReaction?.();
         stopAutoConnect?.();
         stopNotifications?.();
