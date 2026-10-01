@@ -2,10 +2,6 @@
 
 One view of all your clusters in Lens: the physical resources and the alerts of every cluster you have, on one tab, and a count of what is wrong in the status bar wherever you are in Lens.
 
-When something breaks, it tells you, and lets you act on it from right there:
-
-![A critical alert as Multi-Cluster View notifies it: a container in CrashLoopBackOff, with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me about this alert](assets/screenshots/notification.png)
-
 ## Open it
 
 From the dashboard button in the top bar, the **Multi-Cluster View** item in the navigator, **Multi-Cluster View: Open** in the command palette, or by clicking its alert count in the status bar.
@@ -31,10 +27,6 @@ One panel for all connected clusters, most severe first:
 - **Nodes**: NotReady, memory, disk or PID pressure, network unavailable, cordoned.
 - **Prometheus**: alerts that are firing (`ALERTS{alertstate="firing"}`), with the severity their rules give them, when the cluster has a Prometheus Lens can reach.
 - **Events**: Kubernetes Warning events, grouped per object and reason.
-
-A critical issue, as it reaches you: a container that keeps crashing, with what it last exited with and a note when the pod still shows Running, and what you can do about it from right there.
-
-![Example of a critical issue: a CrashLoopBackOff notification with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me about this alert](assets/screenshots/notification.png)
 
 Filter by severity (All, Critical, Warning, Info) or by one cluster (click its alert count on its card). Click an alert to go to its pod, node, workload or namespace.
 
@@ -65,3 +57,5 @@ A critical alert that appears while Lens is open raises a notification, a few at
 - **Never notify me about this alert** stops notifications for that alert only; it stays listed and counted, and its row in the view shows **🔕 Notify again** to undo it.
 
 Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off** at the top of the view shows which it is, turns them all off, and turns them back on. What fires during a pause does not all arrive at once when it ends.
+
+![A critical alert as a notification: a container in CrashLoopBackOff, with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me about this alert](assets/screenshots/notification.png)
