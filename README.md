@@ -2,6 +2,10 @@
 
 One view of all your clusters in Lens: the physical resources and the alerts of every cluster you have, on one tab, and a count of what is wrong in the status bar wherever you are in Lens.
 
+When something breaks, it tells you, and lets you act on it from right there:
+
+![A critical alert as Multi-Cluster View notifies it: a container in CrashLoopBackOff, with Open, Ask AI, Mute 24h, Mute all 24h and Never notify me](assets/screenshots/notification.png)
+
 ## Open it
 
 From the dashboard button in the top bar, the **Multi-Cluster View** item in the navigator, **Multi-Cluster View: Open** in the command palette, or by clicking its alert count in the status bar.
@@ -60,5 +64,3 @@ A critical alert that appears while Lens is open raises a notification, a few at
 - **Mute all 24h** pauses every notification for a day; **Never notify me** turns them off.
 
 Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off** at the top of the view shows which it is and turns them back on. What fires during a pause does not all arrive at once when it ends.
-
-![A notification for a critical CrashLoopBackOff alert](assets/screenshots/notification.png)
