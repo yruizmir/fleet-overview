@@ -64,4 +64,4 @@ A critical alert that appears while Lens is open raises a notification, a few at
 - **Mute all 24h** pauses every notification for a day.
 - **Never notify me about this alert** stops notifications for that alert only; it stays listed and counted, and its row in the view shows **🔕 Notify again** to undo it.
 
-Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off** at the top of the view shows which it is, turns them all off, and turns them back on. What fires during a pause does not all arrive at once when it ends.
+Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off**, on the Alerts line of the view, shows which it is, turns them all off, and turns them back on. What fires during a pause does not all arrive at once when it ends.

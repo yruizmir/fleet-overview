@@ -107,16 +107,20 @@ Requested: ${percentOf(resource.requested, resource.allocatable)?.toFixed(0) ?? 
   </Tile>
 );
 
-const SectionTitle = ({ title, detail }: { title: string; detail?: string }) => (
-  <Div $flex={{ gap: "s", verticalAlign: "bottom" }}>
-    <Span $font={{ size: "l", bold: true }} $color="textHighlight">
-      {title}
-    </Span>
-    {detail && (
-      <Span $font={{ size: "s" }} $color="textMuted">
-        {detail}
+// A section's title and what it shows; `actions` sit at the right end of the same line.
+const SectionTitle = ({ title, detail, actions }: { title: string; detail?: string; actions?: ReactNode }) => (
+  <Div $flex={{ gap: "s", verticalAlign: "center", horizontalAlign: "space-between", wrap: true }}>
+    <Div $flex={{ gap: "s", verticalAlign: "bottom" }}>
+      <Span $font={{ size: "l", bold: true }} $color="textHighlight">
+        {title}
       </Span>
-    )}
+      {detail && (
+        <Span $font={{ size: "s" }} $color="textMuted">
+          {detail}
+        </Span>
+      )}
+    </Div>
+    {actions}
   </Div>
 );
 
@@ -868,7 +872,7 @@ export const FleetDashboard = observer(() => {
 
   return (
     <Div $flex={{ direction: "vertical", gap: "l" }} $padding="xl" $height="full" $overflow="auto">
-      {/* The name with Refresh on its right; below, what it shows with the notifications control on the right. */}
+      {/* The name with Refresh on its right, and what the view shows below it. */}
       <Div $flex={{ direction: "vertical", gap: "xs" }}>
         <Div $flex={{ horizontalAlign: "space-between", verticalAlign: "center", gap: "m", wrap: true }}>
           <Span $font={{ size: "xxl", bold: true }} $color="textHighlight">
@@ -881,19 +885,20 @@ export const FleetDashboard = observer(() => {
             </PrimaryButton>
           </Div>
         </Div>
-        <Div $flex={{ horizontalAlign: "space-between", verticalAlign: "center", gap: "m", wrap: true }}>
-          <Span $color="textMuted">
-            Physical resources and alerts across all your clusters.
-            {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : ` Updates live; metrics every ${refreshSeconds}s.`}
-          </Span>
-          <NotificationsToggle />
-        </Div>
+        <Span $color="textMuted">
+          Physical resources and alerts across all your clusters.
+          {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : ` Updates live; metrics every ${refreshSeconds}s.`}
+        </Span>
       </Div>
       {monitor.isReady.get() ? (
         <>
           <SectionTitle title="All clusters" />
           <Totals />
-          <SectionTitle title="Alerts" detail="Every connected cluster; click a cluster's alert count below to show only its alerts." />
+          <SectionTitle
+            title="Alerts"
+            detail="Every connected cluster; click a cluster's alert count below to show only its alerts."
+            actions={<NotificationsToggle />}
+          />
           <AlertsPanel />
           <SectionTitle title="Capacity per cluster" />
           <ClusterToolbar />
