@@ -44,6 +44,8 @@ import {
   workloadAlerts,
 } from "./fleet-model";
 import { alertMutesInjectable } from "./alert-mutes.injectable";
+import { selectNotifiable } from "./notification-policy";
+import { notificationSettingsInjectable } from "./notification-settings.injectable";
 import { notifyCriticalAlertInjectable } from "./notify-critical-alert.injectable";
 import { eventKind } from "./event-kind";
 import { refreshIntervalInjectable } from "./refresh-interval.injectable";
@@ -99,8 +101,6 @@ const maxConnectBackoffMs = 10 * 60_000;
 // A cluster's alerts in its first minute of being watched are what it already had: no notification for those.
 const notifyAfterMs = 60_000;
 const maxNotificationsAtOnce = 3;
-// An alert gone for less than this and back is the same problem: no second notification for it.
-const forgetResolvedAfterMs = 10 * 60_000;
 const mostCommon = (values: readonly (string | undefined)[]) => {
   const counts = new Map<string, number>();
 
@@ -145,6 +145,7 @@ export const fleetMonitorInjectable = getInjectable2({
     const mutes = di.inject(alertMutesInjectable)();
     const showErrorNotification = di.inject(showErrorNotificationInjectionToken)();
     const notifyCriticalAlert = di.inject(notifyCriticalAlertInjectable)();
+    const notificationSettings = di.inject(notificationSettingsInjectable)();
     const pollIntervalMs = computed(() => refreshInterval.seconds.get() * 1000);
 
     const records = observable.box<IComputedValue<ClusterRecord[]> | undefined>(undefined, { deep: false });
@@ -485,16 +486,11 @@ export const fleetMonitorInjectable = getInjectable2({
       return reaction(
         () => alerts.get().filter((alert) => alert.severity === "critical"),
         (critical) => {
-          const at = Date.now();
-          const fresh = critical.filter((alert) => !seen.has(alert.key) && !warmingUp(alert));
-
-          critical.forEach((alert) => seen.set(alert.key, at));
-
-          for (const [key, lastSeen] of [...seen]) {
-            if (at - lastSeen > forgetResolvedAfterMs) {
-              seen.delete(key);
-            }
-          }
+          const fresh = selectNotifiable(critical, seen, {
+            now: Date.now(),
+            silenced: notificationSettings.state.get().kind !== "on",
+            warmingUp,
+          });
 
           const nameOf = (clusterId: string) =>
             records.get()?.get().find((record) => record.id === clusterId)?.name.get() ?? clusterId;

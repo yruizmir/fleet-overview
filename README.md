@@ -49,6 +49,12 @@ Click a cluster's name or its rings to open its Lens overview. This goes through
 
 The status bar shows the critical and warning alerts of your connected clusters, or **All clusters OK**, wherever you are in Lens. It only watches clusters that are already connected: connecting them is the view's to do.
 
-A critical alert that appears while Lens is open raises a notification, a few at most at once, with **Open** to go to what it is about and **Ask AI** to troubleshoot it. What a cluster already had when it connected, and muted alerts, do not.
+A critical alert that appears while Lens is open raises a notification, a few at most at once. What a cluster already had when it connected, and muted alerts, do not. From the notification:
+
+- **Open** goes to what the alert is about, **Ask AI** troubleshoots it.
+- **Mute 24h** mutes that alert for a day.
+- **Mute all 24h** pauses every notification for a day; **Never notify me** turns them off.
+
+Paused or off, the alerts still show in the view and the status bar, which adds 🔕. **Notifications: On · Pause 24h · Off** at the top of the view shows which it is and turns them back on. What fires during a pause does not all arrive at once when it ends.
 
 ![A notification for a critical CrashLoopBackOff alert](assets/screenshots/notification.png)

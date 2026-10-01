@@ -13,6 +13,7 @@ import { type FleetAlert, formatAge, type Resource, type Severity } from "./flee
 import { type ClusterView, fleetMonitorInjectable } from "./fleet-monitor.injectable";
 import { askAiAboutAlertInjectable } from "./ask-ai-about-alert.injectable";
 import { goToAlertInjectable, goToClusterInjectable } from "./go-to-alert.injectable";
+import { notificationSettingsInjectable } from "./notification-settings.injectable";
 import { refreshIntervalInjectable } from "./refresh-interval.injectable";
 import { ResourceRings } from "./resource-rings";
 import { SparkleIcon } from "./sparkle-icon";
@@ -791,6 +792,48 @@ const RefreshIntervalField = observer(() => {
   );
 });
 
+// Whether critical alerts raise notifications: on, paused for a day, or off. Also the way back after "Mute all
+// 24h" or "Never notify me" in a notification.
+const NotificationsToggle = observer(() => {
+  const settings = useInject(notificationSettingsInjectable)();
+  const state = settings.state.get();
+  const choices = [
+    { kind: "on", label: "On", onClick: settings.turnOn, tooltip: "Notify me of new critical alerts" },
+    {
+      kind: "paused",
+      label: state.kind === "paused" ? `Paused until ${new Date(state.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Pause 24h",
+      onClick: settings.pauseForADay,
+      tooltip: state.kind === "paused" ? "Paused. Click On to resume now" : "No notifications for 24 hours",
+    },
+    { kind: "off", label: "Off", onClick: settings.turnOff, tooltip: "No notifications until you turn them back on" },
+  ] as const;
+
+  return (
+    <Div $flex={{ gap: "xs", verticalAlign: "center" }} role="radiogroup" aria-label="Notifications">
+      <Span $color="textMuted">Notifications</Span>
+      {choices.map((choice) => {
+        const selected = choice.kind === state.kind;
+
+        return (
+          <PlainButton
+            key={choice.kind}
+            role="radio"
+            aria-checked={selected}
+            onClick={choice.onClick}
+            $tooltip={`${choice.tooltip}. The alerts still show here and in the status bar.`}
+            $padding={{ horizontal: "s", vertical: "xxs" }}
+            $border={{ color: "primary", width: "xxs", radius: "m" }}
+            $backgroundColor={selected ? "primary" : { normal: "transparent", hover: "backgroundSecondary" }}
+            $color={selected ? "white" : "textHighlight"}
+          >
+            {choice.label}
+          </PlainButton>
+        );
+      })}
+    </Div>
+  );
+});
+
 export const FleetDashboard = observer(() => {
   const monitor = useInject(fleetMonitorInjectable)();
   const refreshSeconds = useInject(refreshIntervalInjectable)().seconds.get();
@@ -811,7 +854,8 @@ export const FleetDashboard = observer(() => {
             {lastRefresh ? ` Refreshed ${new Date(lastRefresh).toLocaleTimeString()}.` : ` Updates live; metrics every ${refreshSeconds}s.`}
           </Span>
         </Div>
-        <Div $flex={{ gap: "s", verticalAlign: "center" }}>
+        <Div $flex={{ gap: "l", verticalAlign: "center", wrap: true }}>
+          <NotificationsToggle />
           <RefreshIntervalField />
           <PrimaryButton Icon={RefreshIcon} onClick={monitor.refresh}>
             Refresh
